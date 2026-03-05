@@ -1,0 +1,14 @@
+## Interface: 120000, 120001
+## Version: 1.0.0
+## Title: ShodoQoL
+## Note: Personal evoker quality-of-life fixes.
+## Author: Jeremy-Gstein 
+## DefaultState: Enabled
+## SavedVariables: ShodoQoLDB
+
+Core.lua
+EssenceMover.lua
+SpatialParadox.lua
+HearthStoned.lua
+C-Inspect.lua
+DoNotRelease.lua
