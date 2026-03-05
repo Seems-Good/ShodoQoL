@@ -121,7 +121,7 @@ end
 -- Root Settings category  — overview, module list, footer
 -- C-Inspect status is populated in OnReady (after addon load is known).
 ------------------------------------------------------------------------
-local VERSION = "1.1.0"
+local VERSION = "1.0.0"
 
 local MODULES = {
     {
