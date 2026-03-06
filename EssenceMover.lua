@@ -202,30 +202,30 @@ Settings.RegisterAddOnCategory(subCat)
 -- Bootstrap
 ------------------------------------------------------------------------
 ShodoQoL.OnReady(function()
-    -- Sync slider UI to saved scale immediately (no visual lag in the panel).
-    -- We do NOT call ApplyPosition() here because PLAYER_LOGIN fires before
-    -- Blizzard finishes laying out HUD frames — they would re-anchor
-    -- EssencePlayerFrame after us, wiping our position every reload.
-    -- Instead we defer the actual SetPoint to PLAYER_ENTERING_WORLD which
-    -- fires once the world and all HUD frames are fully initialised.
-    -- We unregister immediately so this never fires again on zone transitions.
     slider:SetValue(ShodoQoLDB.essenceMover.scale)
 
+    -- Blizzard re-anchors EssencePlayerFrame on EVERY PLAYER_ENTERING_WORLD
+    -- (initial login, /reload, zone transitions, dungeon entries, death/release).
+    -- We must listen permanently and reapply each time — NOT unregister after
+    -- the first fire, which was the source of the reset-on-death/zone bug.
+    -- ApplyPosition() is a no-op when db.x/y are nil, so there is no cost
+    -- when the user has never moved the bar.
     local pewFrame = CreateFrame("Frame")
     pewFrame:EnableMouse(false)
     pewFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    pewFrame:SetScript("OnEvent", function(self)
-        self:UnregisterEvent("PLAYER_ENTERING_WORLD")  -- one-shot only
-        ApplyPosition()
-
-        -- Register spec listener now that frame is guaranteed to exist
-        if EssencePlayerFrame then
-            specListener = CreateFrame("Frame")
-            specListener:EnableMouse(false)
-            specListener:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-            specListener:SetScript("OnEvent", function(_, _, unit)
-                if unit == "player" then ApplyPosition() end
-            end)
-        end
+    pewFrame:SetScript("OnEvent", function()
+        -- Blizzard re-anchors EssencePlayerFrame after this event fires.
+        -- Defer one frame so our SetPoint lands after their layout pass.
+        C_Timer.After(0, ApplyPosition)
     end)
+
+    -- Spec changes also cause Blizzard to re-anchor. Register only on Evoker.
+    if EssencePlayerFrame then
+        specListener = CreateFrame("Frame")
+        specListener:EnableMouse(false)
+        specListener:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+        specListener:SetScript("OnEvent", function(_, _, unit)
+            if unit == "player" then C_Timer.After(0, ApplyPosition) end
+        end)
+    end
 end)
