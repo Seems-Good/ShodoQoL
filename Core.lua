@@ -3,10 +3,9 @@
 
 ShodoQoL = ShodoQoL or {}
 
--- Evoker class colour (#33937F) used across all modules
-ShodoQoL.COLOR      = { r = 0.200, g = 0.576, b = 0.498 }  -- #33937F
-ShodoQoL.COLOR_HEX  = "|cff33937f"   -- for chat/print prefixes
-ShodoQoL.COLOR_LITE = "|cff52c4af"   -- lighter tint for subtitles
+ShodoQoL.COLOR      = { r = 0.200, g = 0.576, b = 0.498 }
+ShodoQoL.COLOR_HEX  = "|cff33937f"
+ShodoQoL.COLOR_LITE = "|cff52c4af"
 
 ------------------------------------------------------------------------
 -- Master defaults
@@ -35,6 +34,14 @@ ShodoQoL.DEFAULTS = {
         fontSize    = 64,
         fontFace    = "Fonts\\FRIZQT__.TTF",
     },
+    -- Per-module enabled flags.  false = disabled (requires reload to take effect).
+    enabled = {
+        EssenceMover   = true,
+        SpatialParadox = true,
+        HearthStoned   = true,
+        CInspect       = true,
+        DoNotRelease   = true,
+    },
 }
 
 ------------------------------------------------------------------------
@@ -51,11 +58,16 @@ local function BackFill(saved, defaults)
 end
 
 ------------------------------------------------------------------------
--- Shared clean button factory — NO UIPanelButtonTemplate.
--- That template uses the ButtonSkin mixin in 12.x which injects OnUpdate
--- animation scripts for hover/press effects.  These run every frame once
--- the Settings canvas initialises the panel on first visit.
--- A bare Button + manual textures has zero built-in scripts.
+-- IsEnabled — call from any module's OnReady to gate functionality
+------------------------------------------------------------------------
+function ShodoQoL.IsEnabled(key)
+    -- DB may not be ready at parse time; modules call this inside OnReady
+    -- where DB is guaranteed initialised by Core's bootstrap.
+    return ShodoQoLDB.enabled[key] ~= false
+end
+
+------------------------------------------------------------------------
+-- Shared clean button  (no UIPanelButtonTemplate / no OnUpdate)
 ------------------------------------------------------------------------
 function ShodoQoL.CreateButton(parent, label, width, height)
     width  = width  or 110
@@ -65,7 +77,6 @@ function ShodoQoL.CreateButton(parent, label, width, height)
     btn:SetSize(width, height)
     btn:EnableMouse(true)
 
-    -- Background layers
     local bgNormal = btn:CreateTexture(nil, "BACKGROUND")
     bgNormal:SetAllPoints()
     bgNormal:SetColorTexture(0.12, 0.12, 0.12, 0.90)
@@ -80,7 +91,6 @@ function ShodoQoL.CreateButton(parent, label, width, height)
     bgPush:SetColorTexture(0.10, 0.35, 0.30, 0.60)
     bgPush:Hide()
 
-    -- Border (BackdropTemplate is fine — no scripts of its own)
     local border = CreateFrame("Frame", nil, btn, "BackdropTemplate")
     border:SetAllPoints()
     border:SetBackdrop({
@@ -91,7 +101,6 @@ function ShodoQoL.CreateButton(parent, label, width, height)
     border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.70)
     border:EnableMouse(false)
 
-    -- Label
     local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetAllPoints()
     fs:SetJustifyH("CENTER")
@@ -99,7 +108,6 @@ function ShodoQoL.CreateButton(parent, label, width, height)
     fs:SetText(label)
     fs:SetTextColor(0.90, 0.95, 0.92)
 
-    -- Event-driven hover/push — no OnUpdate
     btn:SetScript("OnEnter", function()
         bgHover:Show()
         border:SetBackdropBorderColor(0.33, 0.82, 0.70, 1.0)
@@ -118,43 +126,28 @@ function ShodoQoL.CreateButton(parent, label, width, height)
 end
 
 ------------------------------------------------------------------------
--- Root Settings category  — overview, module list, footer
--- C-Inspect status is populated in OnReady (after addon load is known).
+-- Root Settings panel
 ------------------------------------------------------------------------
 local VERSION = "1.0.0"
 
+-- key        = ShodoQoLDB.enabled key (nil = no toggle, e.g. always-on modules)
+-- addonKey   = standalone addon name to check with IsAddOnLoaded
 local MODULES = {
-    {
-        name  = "Essence Mover",
-        desc  = "Drag your Evoker Essence bar anywhere on screen. "
-             .. "Adjust scale with a live slider. Position persists across "
-             .. "reloads and spec changes.",
-    },
-    {
-        name  = "Spatial Paradox",
-        desc  = "Auto-generates a |cff52c4af/cast [@Name,nodead]|r macro for "
-             .. "Spatial Paradox (Bronze). Supports cross-realm targets. "
-             .. "Per-character macro slot.",
-    },
-    {
-        name  = "HearthStoned",
-        desc  = "Cycles through all owned hearthstone toys with a single "
-             .. "per-character macro. Rescan at any time to pick up new toys.",
-    },
-    {
-        name  = "C-Inspect",
-        desc  = "Hold |cff52c4afCtrl|r and left-click a friendly player to "
-             .. "inspect them instantly. Also registers |cff52c4af/rl|r to "
-             .. "reload your UI quickly.",
-        addonKey = "C-Inspect",
-    },
-    {
-        name  = "DoNotRelease",
-        desc  = "Shows a pulsing warning on screen when you die inside a group "
-             .. "instance. Fully configurable text, color, font, and position. "
-             .. "Use |cff52c4af/dnr test|r to preview.",
-        addonKey = "DoNotRelease",
-    },
+    { name = "Essence Mover",   key = "EssenceMover",
+      desc = "Drag your Evoker Essence bar anywhere on screen. "
+          .. "Adjust scale with a live slider. Position persists across reloads and spec changes." },
+    { name = "Spatial Paradox", key = "SpatialParadox",
+      desc = "Auto-generates a |cff52c4af/cast [@Name,nodead]|r macro for Spatial Paradox (Bronze). "
+          .. "Supports cross-realm targets. Per-character macro slot." },
+    { name = "HearthStoned",    key = "HearthStoned",
+      desc = "Cycles through all owned hearthstone toys with a single per-character macro. "
+          .. "Rescan at any time to pick up new toys." },
+    { name = "C-Inspect",       key = "CInspect",    addonKey = "C-Inspect",
+      desc = "Hold |cff52c4afCtrl|r and left-click a friendly player to inspect them. "
+          .. "Also registers |cff52c4af/rl|r to reload your UI quickly." },
+    { name = "DoNotRelease",    key = "DoNotRelease", addonKey = "DoNotRelease",
+      desc = "Pulsing warning when you die in a group instance. "
+          .. "Configurable text, color, font, and position. Use |cff52c4af/dnr test|r to preview." },
 }
 
 local function Divider(parent, anchor, offY)
@@ -171,7 +164,7 @@ rootPanel.name  = "ShodoQoL"
 rootPanel:EnableMouse(false)
 rootPanel:Hide()
 
--- ── Header ────────────────────────────────────────────────────────────
+-- Header
 local titleFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 titleFS:SetPoint("TOPLEFT", 16, -16)
 titleFS:SetText("|cff33937fShodo|r|cff52c4afQoL|r")
@@ -186,39 +179,101 @@ subFS:SetText("|cff888888Personal quality-of-life tweaks for World of Warcraft|r
 
 local div0 = Divider(rootPanel, subFS, -10)
 
--- ── Modules section ───────────────────────────────────────────────────
+-- Modules section header
 local modTitleFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 modTitleFS:SetPoint("TOPLEFT", div0, "BOTTOMLEFT", 0, -14)
 modTitleFS:SetText("|cff52c4afModules|r")
 
-local prevAnchor = modTitleFS
-local statusBadges = {}  -- addonKey -> fontstring
+local reloadNoteFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+reloadNoteFS:SetPoint("LEFT", modTitleFS, "RIGHT", 12, 0)
+reloadNoteFS:SetText("")  -- shown only after a toggle
 
+local prevAnchor  = modTitleFS
+local statusBadges = {}   -- addonKey  -> fontstring
+local toggleBtns   = {}   -- moduleKey -> { btn, labelFS, bgEnabled, bgDisabled }
+
+-- Build one row per module
 for _, mod in ipairs(MODULES) do
+    -- Toggle button (left-most, 52px wide)
+    local toggleBtn = CreateFrame("Button", nil, rootPanel)
+    toggleBtn:SetSize(52, 20)
+    toggleBtn:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", 0, -14)
+    toggleBtn:EnableMouse(true)
+
+    local tbBg = toggleBtn:CreateTexture(nil, "BACKGROUND")
+    tbBg:SetAllPoints()
+    tbBg:SetColorTexture(0.06, 0.06, 0.06, 0.90)
+
+    local tbBorder = CreateFrame("Frame", nil, toggleBtn, "BackdropTemplate")
+    tbBorder:SetAllPoints()
+    tbBorder:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                           edgeSize = 8, insets = {left=1,right=1,top=1,bottom=1} })
+    tbBorder:EnableMouse(false)
+
+    local tbLabel = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    tbLabel:SetAllPoints()
+    tbLabel:SetJustifyH("CENTER")
+    tbLabel:SetJustifyV("MIDDLE")
+
+    -- Module name (to the right of toggle)
     local nameFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    nameFS:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", 0, -16)
+    nameFS:SetPoint("LEFT", toggleBtn, "RIGHT", 8, 0)
     nameFS:SetText("|cff33937f" .. mod.name .. "|r")
 
+    -- Status badge (standalone/bundled, right of name)
     local statusFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     statusFS:SetPoint("LEFT", nameFS, "RIGHT", 10, -1)
     statusFS:SetText("|cff33937f[active]|r")
     if mod.addonKey then statusBadges[mod.addonKey] = statusFS end
 
+    -- Description (below the name row)
     local descFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    descFS:SetPoint("TOPLEFT", nameFS, "BOTTOMLEFT", 0, -5)
+    descFS:SetPoint("TOPLEFT", toggleBtn, "BOTTOMLEFT", 0, -4)
     descFS:SetWidth(540)
     descFS:SetJustifyH("LEFT")
     descFS:SetTextColor(0.65, 0.65, 0.65)
     descFS:SetText(mod.desc)
 
+    -- Store toggle refs; update applied in OnReady once DB is ready
+    if mod.key then
+        toggleBtns[mod.key] = { btn = toggleBtn, label = tbLabel,
+                                 border = tbBorder, desc = descFS }
+    end
+
+    -- Toggle click: flip DB flag, update visuals, show reload note
+    local modKey = mod.key
+    toggleBtn:SetScript("OnClick", function()
+        if not modKey then return end
+        local cur = ShodoQoLDB.enabled[modKey]
+        local new = (cur == false) and true or false  -- flip
+        ShodoQoLDB.enabled[modKey] = new
+        -- Update this button's visuals immediately
+        local entry = toggleBtns[modKey]
+        if new then
+            entry.label:SetText("|cff33937f[ON]|r")
+            entry.border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.80)
+        else
+            entry.label:SetText("|cffff4444[OFF]|r")
+            entry.border:SetBackdropBorderColor(0.60, 0.10, 0.10, 0.80)
+        end
+        reloadNoteFS:SetText("|cffffd100Reload UI to apply changes  (/rl)|r")
+    end)
+    toggleBtn:SetScript("OnEnter", function()
+        tbBg:SetColorTexture(0.20, 0.20, 0.20, 0.90)
+    end)
+    toggleBtn:SetScript("OnLeave", function()
+        tbBg:SetColorTexture(0.06, 0.06, 0.06, 0.90)
+    end)
+
     prevAnchor = descFS
 end
 
 ShodoQoL._statusBadges = statusBadges
+ShodoQoL._toggleBtns   = toggleBtns
 
 local div1 = Divider(rootPanel, prevAnchor, -16)
 
--- ── Footer — one row per line for clean alignment ─────────────────────
+-- Footer
 local footer1 = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 footer1:SetPoint("TOPLEFT", div1, "BOTTOMLEFT", 0, -14)
 footer1:SetWidth(560)
@@ -239,7 +294,7 @@ ShodoQoL.rootCategory = Settings.RegisterCanvasLayoutCategory(rootPanel, "ShodoQ
 Settings.RegisterAddOnCategory(ShodoQoL.rootCategory)
 
 ------------------------------------------------------------------------
--- Bootstrap — PLAYER_LOGIN fires once per UI load, unregisters itself.
+-- Bootstrap
 ------------------------------------------------------------------------
 local boot = CreateFrame("Frame")
 boot:EnableMouse(false)
@@ -253,13 +308,24 @@ boot:SetScript("OnEvent", function(self)
         BackFill(ShodoQoLDB, ShodoQoL.DEFAULTS)
     end
 
+    -- Sync toggle button visuals to saved DB state
+    for key, entry in pairs(ShodoQoL._toggleBtns or {}) do
+        local enabled = ShodoQoLDB.enabled[key] ~= false
+        if enabled then
+            entry.label:SetText("|cff33937f[ON]|r")
+            entry.border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.80)
+        else
+            entry.label:SetText("|cffff4444[OFF]|r")
+            entry.border:SetBackdropBorderColor(0.60, 0.10, 0.10, 0.80)
+        end
+    end
+
     for _, fn in ipairs(ShodoQoL.onReady or {}) do
         pcall(fn)
     end
 
-    -- Update status badges for all bundled addons
-    local badges = ShodoQoL._statusBadges or {}
-    for addonKey, fs in pairs(badges) do
+    -- Update standalone/bundled badges
+    for addonKey, fs in pairs(ShodoQoL._statusBadges or {}) do
         if C_AddOns.IsAddOnLoaded(addonKey) then
             fs:SetText("|cff52c4af[standalone]|r")
         else

@@ -5,6 +5,7 @@
 ## Author: Jeremy-Gstein 
 ## DefaultState: Enabled
 ## SavedVariables: ShodoQoLDB
+## IconTexture: Interface\Icons\inv12_apextalent_evoker_merithrasblessing
 
 Core.lua
 EssenceMover.lua

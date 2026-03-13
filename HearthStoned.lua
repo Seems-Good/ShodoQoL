@@ -218,8 +218,8 @@ local function RefreshList()
         local name = C_ToyBox.GetToyInfo(itemID)
                   or C_Item.GetItemNameByID(itemID)
                   or ("Item " .. itemID)
-        local marker = (i == db.index) and "|cff00ff00 < next|r" or ""
-        table.insert(lines, string.format("%s%s", name, marker))
+        local marker = (i == db.index) and "|cff00ff00 ◄ next|r" or ""
+        table.insert(lines, string.format("|cff888888%d.|r %s%s", i, name, marker))
     end
     listFS:SetText(table.concat(lines, "\n"))
 end
@@ -232,6 +232,7 @@ Settings.RegisterAddOnCategory(subCat)
 -- Hook into Core bootstrap
 ------------------------------------------------------------------------
 ShodoQoL.OnReady(function()
+    if not ShodoQoL.IsEnabled("HearthStoned") then return end
     local db = ShodoQoLDB.hearthStoned
     -- Restore previously scanned list so the macro works immediately
     -- without waiting for a manual rescan

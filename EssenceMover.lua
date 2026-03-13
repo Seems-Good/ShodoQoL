@@ -202,6 +202,7 @@ Settings.RegisterAddOnCategory(subCat)
 -- Bootstrap
 ------------------------------------------------------------------------
 ShodoQoL.OnReady(function()
+    if not ShodoQoL.IsEnabled("EssenceMover") then return end
     slider:SetValue(ShodoQoLDB.essenceMover.scale)
 
     -- Blizzard re-anchors EssencePlayerFrame on EVERY PLAYER_ENTERING_WORLD

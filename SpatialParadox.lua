@@ -294,6 +294,7 @@ Settings.RegisterAddOnCategory(subCat)
 -- Bootstrap
 ------------------------------------------------------------------------
 ShodoQoL.OnReady(function()
+    if not ShodoQoL.IsEnabled("SpatialParadox") then return end
     CleanupGlobalDuplicate()
     RefreshStatus()
     RefreshCurrentLabel()

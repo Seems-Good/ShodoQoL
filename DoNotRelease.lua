@@ -427,43 +427,6 @@ local function BuildPanel()
 end
 
 ------------------------------------------------------------------------
--- Events
-------------------------------------------------------------------------
-local rosterPending = false
-
-local evtFrame = CreateFrame("Frame")
-evtFrame:EnableMouse(false)
-evtFrame:RegisterEvent("PLAYER_DEAD")
-evtFrame:RegisterEvent("PLAYER_ALIVE")
-evtFrame:RegisterEvent("PLAYER_UNGHOST")
-evtFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-evtFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-
-evtFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_DEAD" then
-        C_Timer.After(0.3, ShowWarning)
-
-    elseif event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
-        HideWarning()
-        DisableDrag()
-
-    elseif event == "GROUP_ROSTER_UPDATE" then
-        if rosterPending then return end
-        rosterPending = true
-        C_Timer.After(0.25, function()
-            rosterPending = false
-            if warnFrame:IsShown() and not ShouldWarn() then HideWarning() end
-        end)
-
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        HideWarning()
-        C_Timer.After(0.5, function()
-            if ShouldWarn() then ShowWarning() end
-        end)
-    end
-end)
-
-------------------------------------------------------------------------
 -- Slash commands
 ------------------------------------------------------------------------
 SLASH_SHODO_DNR1 = "/dnr"
@@ -487,11 +450,42 @@ end
 -- Hook into Core bootstrap
 ------------------------------------------------------------------------
 ShodoQoL.OnReady(function()
-    -- Back-fill DNR sub-table defaults
     local db = ShodoQoLDB.doNotRelease
     for k, v in pairs(DNR_DEFAULTS) do
         if db[k] == nil then db[k] = v end
     end
+
+    BuildPanel()  -- always build so user can re-enable from settings
+
+    if not ShodoQoL.IsEnabled("DoNotRelease") then return end
+
     ApplyAll()
-    BuildPanel()
+
+    local rosterPending = false
+    local evtFrame = CreateFrame("Frame")
+    evtFrame:EnableMouse(false)
+    evtFrame:RegisterEvent("PLAYER_DEAD")
+    evtFrame:RegisterEvent("PLAYER_ALIVE")
+    evtFrame:RegisterEvent("PLAYER_UNGHOST")
+    evtFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+    evtFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    evtFrame:SetScript("OnEvent", function(self, event)
+        if event == "PLAYER_DEAD" then
+            C_Timer.After(0.3, ShowWarning)
+        elseif event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+            HideWarning(); DisableDrag()
+        elseif event == "GROUP_ROSTER_UPDATE" then
+            if rosterPending then return end
+            rosterPending = true
+            C_Timer.After(0.25, function()
+                rosterPending = false
+                if warnFrame:IsShown() and not ShouldWarn() then HideWarning() end
+            end)
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            HideWarning()
+            C_Timer.After(0.5, function()
+                if ShouldWarn() then ShowWarning() end
+            end)
+        end
+    end)
 end)
