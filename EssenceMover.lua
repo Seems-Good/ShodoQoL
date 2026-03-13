@@ -211,11 +211,18 @@ ShodoQoL.OnReady(function()
     -- the first fire, which was the source of the reset-on-death/zone bug.
     -- ApplyPosition() is a no-op when db.x/y are nil, so there is no cost
     -- when the user has never moved the bar.
+    --
+    -- UNIT_EXITED_VEHICLE is also registered because leaving a vehicle triggers
+    -- a Blizzard UI re-anchor without firing PLAYER_ENTERING_WORLD.
+    -- NOTE: PLAYER_ENTERING_WORLD passes isInitialLogin (boolean) as its first
+    -- payload arg — NOT nil — so we must branch on the event name, not the unit.
     local pewFrame = CreateFrame("Frame")
     pewFrame:EnableMouse(false)
     pewFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    pewFrame:SetScript("OnEvent", function()
-        -- Blizzard re-anchors EssencePlayerFrame after this event fires.
+    pewFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
+    pewFrame:SetScript("OnEvent", function(_, event, unit)
+        if event == "UNIT_EXITED_VEHICLE" and unit ~= "player" then return end
+        -- Blizzard re-anchors EssencePlayerFrame after these events fire.
         -- Defer one frame so our SetPoint lands after their layout pass.
         C_Timer.After(0, ApplyPosition)
     end)
@@ -230,3 +237,24 @@ ShodoQoL.OnReady(function()
         end)
     end
 end)
+
+------------------------------------------------------------------------
+-- Slash command — macro-friendly manual reposition.
+-- Usage:  /essencebar
+-- Snaps the bar back to the saved DB position without a reload.
+-- Safe to bind to a macro for edge cases (e.g. selfie camera reset).
+------------------------------------------------------------------------
+SLASH_ESSENCEBAR1 = "/essencebar"
+SlashCmdList["ESSENCEBAR"] = function()
+    if not ShodoQoLDB then
+        print("|cffff6060ShodoQoL|r: DB not ready.")
+        return
+    end
+    local db = ShodoQoLDB.essenceMover
+    if not db.x or not db.y then
+        print("|cff33937fShodoQoL|r: No saved Essence bar position.")
+        return
+    end
+    ApplyPosition()
+    print(string.format("|cff33937fShodoQoL|r: Essence bar snapped to (%d, %d) @ %.2fx.", db.x, db.y, db.scale))
+end
