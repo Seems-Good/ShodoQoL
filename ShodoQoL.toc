@@ -1,7 +1,7 @@
 ## Interface: 120000, 120001
 ## Version: 1.0.0
 ## Title: ShodoQoL
-## Note: Personal evoker quality-of-life fixes.
+## Note: Personal Evoker Macros and UI quality-of-life fixes. Modular & Lightweight for all Classes! 
 ## Author: Jeremy-Gstein 
 ## DefaultState: Enabled
 ## SavedVariables: ShodoQoLDB
@@ -13,3 +13,4 @@ SpatialParadox.lua
 HearthStoned.lua
 C-Inspect.lua
 DoNotRelease.lua
+ShoStats.lua

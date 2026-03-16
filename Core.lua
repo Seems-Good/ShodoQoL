@@ -3,8 +3,8 @@
 
 ShodoQoL = ShodoQoL or {}
 
-ShodoQoL.COLOR      = { r = 0.200, g = 0.576, b = 0.498 }
-ShodoQoL.COLOR_HEX  = "|cff33937f"
+ShodoQoL.COLOR = { r = 0.200, g = 0.576, b = 0.498 }
+ShodoQoL.COLOR_HEX = "|cff33937f"
 ShodoQoL.COLOR_LITE = "|cff52c4af"
 
 ------------------------------------------------------------------------
@@ -12,12 +12,12 @@ ShodoQoL.COLOR_LITE = "|cff52c4af"
 ------------------------------------------------------------------------
 ShodoQoL.DEFAULTS = {
     essenceMover = {
-        x     = nil,
-        y     = nil,
+        x = nil,
+        y = nil,
         scale = 1.5,
     },
     spatialParadox = {
-        targetName  = nil,
+        targetName = nil,
         targetRealm = nil,
     },
     hearthStoned = {
@@ -25,22 +25,32 @@ ShodoQoL.DEFAULTS = {
         index = 1,
     },
     doNotRelease = {
-        posX        = 0,
-        posY        = 120,
-        colorR      = 1,
-        colorG      = 0.1,
-        colorB      = 0.1,
+        posX = 0,
+        posY = 120,
+        colorR = 1,
+        colorG = 0.1,
+        colorB = 0.1,
         warningText = "PLEASE DO NOT RELEASE",
-        fontSize    = 64,
-        fontFace    = "Fonts\\FRIZQT__.TTF",
+        fontSize = 64,
+        fontFace = "Fonts\\FRIZQT__.TTF",
     },
-    -- Per-module enabled flags.  false = disabled (requires reload to take effect).
+    shoStats = {
+        point = "CENTER", relTo = "UIParent", relPt = "CENTER",
+        x = 0, y = 200,
+        locked = false, scale = 1.0, shown = true, opacity = 1.0,
+        show_crit = true, show_haste = true, show_mast = true,
+        show_vers = true, show_leech = true, show_speed = true,
+        show_main = true,
+        statOrder = {"crit","haste","mast","vers","leech","main"},
+    },
+    -- Per-module enabled flags. false = disabled (requires reload to take effect).
     enabled = {
         EssenceMover   = true,
         SpatialParadox = true,
         HearthStoned   = true,
         CInspect       = true,
         DoNotRelease   = true,
+        ShoStats       = true,
     },
 }
 
@@ -52,7 +62,12 @@ local function BackFill(saved, defaults)
         if saved[k] == nil then
             saved[k] = type(v) == "table" and CopyTable(v) or v
         elseif type(v) == "table" and type(saved[k]) == "table" then
-            BackFill(saved[k], v)
+            -- Don't recurse into arrays (sequences) — treat them as atomic
+            -- values so saved arrays like statOrder aren't silently refilled
+            -- with default entries on every reload.
+            if #v == 0 then
+                BackFill(saved[k], v)
+            end
         end
     end
 end
@@ -67,10 +82,10 @@ function ShodoQoL.IsEnabled(key)
 end
 
 ------------------------------------------------------------------------
--- Shared clean button  (no UIPanelButtonTemplate / no OnUpdate)
+-- Shared clean button (no UIPanelButtonTemplate / no OnUpdate)
 ------------------------------------------------------------------------
 function ShodoQoL.CreateButton(parent, label, width, height)
-    width  = width  or 110
+    width = width or 110
     height = height or 24
 
     local btn = CreateFrame("Button", nil, parent)
@@ -96,7 +111,7 @@ function ShodoQoL.CreateButton(parent, label, width, height)
     border:SetBackdrop({
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         edgeSize = 10,
-        insets   = { left = 2, right = 2, top = 2, bottom = 2 },
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
     })
     border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.70)
     border:EnableMouse(false)
@@ -120,7 +135,7 @@ function ShodoQoL.CreateButton(parent, label, width, height)
         fs:SetTextColor(0.90, 0.95, 0.92)
     end)
     btn:SetScript("OnMouseDown", function() bgPush:Show() end)
-    btn:SetScript("OnMouseUp",   function() bgPush:Hide() end)
+    btn:SetScript("OnMouseUp", function() bgPush:Hide() end)
 
     return btn
 end
@@ -128,31 +143,34 @@ end
 ------------------------------------------------------------------------
 -- Root Settings panel
 ------------------------------------------------------------------------
-local VERSION = "1.0.0"
+local VERSION = "1.1.0"
 
--- key        = ShodoQoLDB.enabled key (nil = no toggle, e.g. always-on modules)
--- addonKey   = standalone addon name to check with IsAddOnLoaded
+-- key = ShodoQoLDB.enabled key (nil = no toggle, e.g. always-on modules)
+-- addonKey = standalone addon name to check with IsAddOnLoaded
 local MODULES = {
-    { name = "Essence Mover",   key = "EssenceMover",
+    { name = "Essence Mover", key = "EssenceMover",
       desc = "Drag your Evoker Essence bar anywhere on screen. "
           .. "Adjust scale with a live slider. Position persists across reloads and spec changes." },
     { name = "Spatial Paradox", key = "SpatialParadox",
       desc = "Auto-generates a |cff52c4af/cast [@Name,nodead]|r macro for Spatial Paradox (Bronze). "
           .. "Supports cross-realm targets. Per-character macro slot." },
-    { name = "HearthStoned",    key = "HearthStoned",
+    { name = "HearthStoned", key = "HearthStoned",
       desc = "Cycles through all owned hearthstone toys with a single per-character macro. "
           .. "Rescan at any time to pick up new toys." },
-    { name = "C-Inspect",       key = "CInspect",    addonKey = "C-Inspect",
+    { name = "C-Inspect", key = "CInspect", addonKey = "C-Inspect",
       desc = "Hold |cff52c4afCtrl|r and left-click a friendly player to inspect them. "
           .. "Also registers |cff52c4af/rl|r to reload your UI quickly." },
-    { name = "DoNotRelease",    key = "DoNotRelease", addonKey = "DoNotRelease",
+    { name = "DoNotRelease", key = "DoNotRelease", addonKey = "DoNotRelease",
       desc = "Pulsing warning when you die in a group instance. "
           .. "Configurable text, color, font, and position. Use |cff52c4af/dnr test|r to preview." },
+    { name = "ShoStats", key = "ShoStats",
+      desc = "Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, "
+          .. "with draggable frame, opacity/scale sliders, and per-stat visibility toggles." },
 }
 
 local function Divider(parent, anchor, offY)
     local d = parent:CreateTexture(nil, "ARTWORK")
-    d:SetPoint("TOPLEFT",  anchor, "BOTTOMLEFT",  0, offY)
+    d:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, offY)
     d:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, offY)
     d:SetHeight(1)
     d:SetColorTexture(0.20, 0.58, 0.50, 0.45)
@@ -160,7 +178,7 @@ local function Divider(parent, anchor, offY)
 end
 
 local rootPanel = CreateFrame("Frame")
-rootPanel.name  = "ShodoQoL"
+rootPanel.name = "ShodoQoL"
 rootPanel:EnableMouse(false)
 rootPanel:Hide()
 
@@ -186,11 +204,11 @@ modTitleFS:SetText("|cff52c4afModules|r")
 
 local reloadNoteFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 reloadNoteFS:SetPoint("LEFT", modTitleFS, "RIGHT", 12, 0)
-reloadNoteFS:SetText("")  -- shown only after a toggle
+reloadNoteFS:SetText("") -- shown only after a toggle
 
-local prevAnchor  = modTitleFS
-local statusBadges = {}   -- addonKey  -> fontstring
-local toggleBtns   = {}   -- moduleKey -> { btn, labelFS, bgEnabled, bgDisabled }
+local prevAnchor = modTitleFS
+local statusBadges = {} -- addonKey -> fontstring
+local toggleBtns = {} -- moduleKey -> { btn, labelFS, bgEnabled, bgDisabled }
 
 -- Build one row per module
 for _, mod in ipairs(MODULES) do
@@ -206,8 +224,9 @@ for _, mod in ipairs(MODULES) do
 
     local tbBorder = CreateFrame("Frame", nil, toggleBtn, "BackdropTemplate")
     tbBorder:SetAllPoints()
-    tbBorder:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                           edgeSize = 8, insets = {left=1,right=1,top=1,bottom=1} })
+    tbBorder:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 8, insets = {left=1,right=1,top=1,bottom=1} })
     tbBorder:EnableMouse(false)
 
     local tbLabel = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -237,7 +256,7 @@ for _, mod in ipairs(MODULES) do
     -- Store toggle refs; update applied in OnReady once DB is ready
     if mod.key then
         toggleBtns[mod.key] = { btn = toggleBtn, label = tbLabel,
-                                 border = tbBorder, desc = descFS }
+                                border = tbBorder, desc = descFS }
     end
 
     -- Toggle click: flip DB flag, update visuals, show reload note
@@ -245,7 +264,7 @@ for _, mod in ipairs(MODULES) do
     toggleBtn:SetScript("OnClick", function()
         if not modKey then return end
         local cur = ShodoQoLDB.enabled[modKey]
-        local new = (cur == false) and true or false  -- flip
+        local new = (cur == false) and true or false -- flip
         ShodoQoLDB.enabled[modKey] = new
         -- Update this button's visuals immediately
         local entry = toggleBtns[modKey]
@@ -256,7 +275,7 @@ for _, mod in ipairs(MODULES) do
             entry.label:SetText("|cffff4444[OFF]|r")
             entry.border:SetBackdropBorderColor(0.60, 0.10, 0.10, 0.80)
         end
-        reloadNoteFS:SetText("|cffffd100Reload UI to apply changes  (/rl)|r")
+        reloadNoteFS:SetText("|cffffd100Reload UI to apply changes (/rl)|r")
     end)
     toggleBtn:SetScript("OnEnter", function()
         tbBg:SetColorTexture(0.20, 0.20, 0.20, 0.90)
@@ -269,7 +288,7 @@ for _, mod in ipairs(MODULES) do
 end
 
 ShodoQoL._statusBadges = statusBadges
-ShodoQoL._toggleBtns   = toggleBtns
+ShodoQoL._toggleBtns = toggleBtns
 
 local div1 = Divider(rootPanel, prevAnchor, -16)
 
@@ -279,16 +298,16 @@ footer1:SetPoint("TOPLEFT", div1, "BOTTOMLEFT", 0, -14)
 footer1:SetWidth(560)
 footer1:SetJustifyH("LEFT")
 footer1:SetText(
-    "|cff52c4afVersion:|r  " .. VERSION
-    .. "          |cff52c4afWebsite:|r  https://seemsgood.org"
-    .. "          |cff52c4afKo-fi:|r  https://ko-fi.com/j51b5"
+    "|cff52c4afVersion:|r " .. VERSION
+    .. " |cff52c4afWebsite:|r https://seemsgood.org"
+    .. " |cff52c4afKo-fi:|r https://ko-fi.com/j51b5"
 )
 
 local footer2 = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 footer2:SetPoint("TOPLEFT", footer1, "BOTTOMLEFT", 0, -8)
 footer2:SetWidth(560)
 footer2:SetJustifyH("LEFT")
-footer2:SetText("|cff52c4afBugs & Issues:|r  https://github.com/Seems-Good/ShodoQoL")
+footer2:SetText("|cff52c4afBugs & Issues:|r https://github.com/Seems-Good/ShodoQoL")
 
 ShodoQoL.rootCategory = Settings.RegisterCanvasLayoutCategory(rootPanel, "ShodoQoL")
 Settings.RegisterAddOnCategory(ShodoQoL.rootCategory)
