@@ -165,9 +165,6 @@ end
 ------------------------------------------------------------------------
 local VERSION = "@project-version@"
 
-
---"1.1.0"
-
 -- key = ShodoQoLDB.enabled key (nil = no toggle, e.g. always-on modules)
 -- addonKey = standalone addon name to check with IsAddOnLoaded
 local MODULES = {
@@ -218,7 +215,7 @@ titleFS:SetText("|cff33937fShodo|r|cff52c4afQoL|r")
 
 local verFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 verFS:SetPoint("LEFT", titleFS, "RIGHT", 8, -1)
-verFS:SetText("|cff666666v" .. VERSION .. "|r")
+verFS:SetText("|cff666666" .. VERSION .. "|r")
 
 local subFS = rootPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 subFS:SetPoint("TOPLEFT", titleFS, "BOTTOMLEFT", 0, -5)
