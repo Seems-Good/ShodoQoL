@@ -34,6 +34,18 @@ ShodoQoL.DEFAULTS = {
         fontSize = 64,
         fontFace = "Fonts\\FRIZQT__.TTF",
     },
+    sourceOfMagic = {
+        posX        = 0,
+        posY        = 80,
+        colorR      = 0.20,
+        colorG      = 0.75,
+        colorB      = 1.00,
+        warningText = "SOURCE OF MAGIC MISSING",
+        fontSize    = 52,
+        fontFace    = "Fonts\\FRIZQT__.TTF",
+        targetName  = nil,
+        targetRealm = nil,
+    },
     shoStats = {
         point = "CENTER", relTo = "UIParent", relPt = "CENTER",
         x = 0, y = 200,
@@ -51,6 +63,7 @@ ShodoQoL.DEFAULTS = {
         CInspect       = true,
         DoNotRelease   = true,
         ShoStats       = true,
+        SourceOfMagic  = true,
     },
 }
 
@@ -163,6 +176,9 @@ local MODULES = {
     { name = "DoNotRelease", key = "DoNotRelease", addonKey = "DoNotRelease",
       desc = "Pulsing warning when you die in a group instance. "
           .. "Configurable text, color, font, and position. Use |cff52c4af/dnr test|r to preview." },
+    { name = "Source of Magic", key = "SourceOfMagic",
+      desc = "Out-of-combat popup when Source of Magic is missing from your configured target. "
+          .. "Only active when talented into Source of Magic. Use |cff52c4af/som test|r to preview." },
     { name = "ShoStats", key = "ShoStats",
       desc = "Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, "
           .. "with draggable frame, opacity/scale sliders, and per-stat visibility toggles." },
