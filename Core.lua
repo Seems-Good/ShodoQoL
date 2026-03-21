@@ -55,6 +55,12 @@ ShodoQoL.DEFAULTS = {
         show_main = true,
         statOrder = {"crit","haste","mast","vers","leech","main"},
     },
+    hoverTracker = {
+        essBleedX   = 8,
+        essBleedY   = 8,
+        castOpacity = 1.0,
+        essOpacity  = 1.0,
+    },
     -- Per-module enabled flags. false = disabled (requires reload to take effect).
     enabled = {
         EssenceMover   = true,
@@ -64,6 +70,7 @@ ShodoQoL.DEFAULTS = {
         DoNotRelease   = true,
         ShoStats       = true,
         SourceOfMagic  = true,
+        HoverTracker   = true,
     },
 }
 
@@ -182,6 +189,9 @@ local MODULES = {
     { name = "ShoStats", key = "ShoStats",
       desc = "Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, "
           .. "with draggable frame, opacity/scale sliders, and per-stat visibility toggles." },
+    { name = "Hover Tracker", key = "HoverTracker",
+      desc = "Evoker-only. Glows green/amber/red behind your cast bar based on whether Hover lets you "
+          .. "move while casting. Alerts when Hover has no charges. Configurable font, size, and opacity." },
 }
 
 local function Divider(parent, anchor, offY)
