@@ -1,5 +1,5 @@
 ## Interface: 120000, 120001
-## Version: 1.2.0
+## Version: @project-version@
 ## Title: ShodoQoL
 ## Note: Personal Evoker Macros and UI quality-of-life fixes. Modular & Lightweight for all Classes! 
 ## Author: Jeremy-Gstein 

@@ -163,7 +163,10 @@ end
 ------------------------------------------------------------------------
 -- Root Settings panel
 ------------------------------------------------------------------------
-local VERSION = "1.1.0"
+local VERSION = "@project-version@"
+
+
+--"1.1.0"
 
 -- key = ShodoQoLDB.enabled key (nil = no toggle, e.g. always-on modules)
 -- addonKey = standalone addon name to check with IsAddOnLoaded
@@ -324,7 +327,7 @@ footer1:SetPoint("TOPLEFT", div1, "BOTTOMLEFT", 0, -14)
 footer1:SetWidth(560)
 footer1:SetJustifyH("LEFT")
 footer1:SetText(
-    "|cff52c4afVersion:|r " .. VERSION
+    "|cff52c4afVersion:|r " .. VERSION .. " " .. "@project-date-iso@"
     .. " |cff52c4afWebsite:|r https://seemsgood.org"
     .. " |cff52c4afKo-fi:|r https://ko-fi.com/j51b5"
 )
