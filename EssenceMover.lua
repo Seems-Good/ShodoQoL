@@ -1,7 +1,6 @@
 -- ShodoQoL/EssenceMover.lua
 -- Moves and scales the Evoker Essence bar.
 -- Reads/writes ShodoQoLDB.essenceMover.
--- Zero OnUpdate, zero tickers, zero polling.
 
 local function ApplyPosition()
     local frame = EssencePlayerFrame
