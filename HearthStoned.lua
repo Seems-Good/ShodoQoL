@@ -70,12 +70,16 @@ local function CurrentMacroBody()
     if not itemID then
         return "#showtooltip\n/use item:6948"
     end
-    return "#showtooltip\n/run ShodoQoL.HearthStoned.Cycle()\n/use item:" .. itemID
+    return "#showtooltip\n/use item:" .. itemID .. "\n/run ShodoQoL.HearthStoned.Cycle()" 
 end
+
+-- Forward declaration: RefreshList is defined later but called from UpdateMacro.
+local RefreshList
 
 local function UpdateMacro()
     if not MacroExists() then return end
     EditMacro(GetMacroIndexByName(MACRO_NAME), MACRO_NAME, MACRO_ICON, CurrentMacroBody())
+    if RefreshList then RefreshList() end
 end
 
 -- Exposed so the macro's /run line can call it
@@ -205,7 +209,7 @@ listFS:SetWidth(400)
 listFS:SetJustifyH("LEFT")
 listFS:SetText("|cff888888Rescan to populate list.|r")
 
-local function RefreshList()
+RefreshList = function()
     if #ownedItems == 0 then
         listFS:SetText("|cff888888No hearthstones found.|r")
         countFS:SetText("|cff888888none|r")
@@ -215,11 +219,10 @@ local function RefreshList()
     local lines = {}
     local db = ShodoQoLDB.hearthStoned
     for i, itemID in ipairs(ownedItems) do
-        local name = C_ToyBox.GetToyInfo(itemID)
-                  or C_Item.GetItemNameByID(itemID)
+        local name = C_Item.GetItemNameByID(itemID)
                   or ("Item " .. itemID)
         local marker = (i == db.index) and "|cff00ff00 - next|r" or ""
-        table.insert(lines, string.format("|cff888888%d.|r %s%s", i, name, marker))
+        table.insert(lines, string.format("|cff888888%d.|r %s %s", i, name, marker))
     end
     listFS:SetText(table.concat(lines, "\n"))
 end
