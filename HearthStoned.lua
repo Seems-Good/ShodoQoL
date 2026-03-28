@@ -218,7 +218,7 @@ local function RefreshList()
         local name = C_ToyBox.GetToyInfo(itemID)
                   or C_Item.GetItemNameByID(itemID)
                   or ("Item " .. itemID)
-        local marker = (i == db.index) and "|cff00ff00 ◄ next|r" or ""
+        local marker = (i == db.index) and "|cff00ff00 - next|r" or ""
         table.insert(lines, string.format("|cff888888%d.|r %s%s", i, name, marker))
     end
     listFS:SetText(table.concat(lines, "\n"))
