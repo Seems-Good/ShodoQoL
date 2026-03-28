@@ -216,15 +216,33 @@ ShodoQoL.OnReady(function()
     -- a Blizzard UI re-anchor without firing PLAYER_ENTERING_WORLD.
     -- NOTE: PLAYER_ENTERING_WORLD passes isInitialLogin (boolean) as its first
     -- payload arg — NOT nil — so we must branch on the event name, not the unit.
+    -- Debounce flag: collapses rapid UNIT_AURA churn (e.g. combat buff spam)
+    -- into a single deferred apply so we never hammer ApplyPosition.
+    local applyPending = false
+    local function DeferredApply()
+        if applyPending then return end
+        applyPending = true
+        -- 0.05 s gives Blizzard's own re-anchor code (including the one triggered
+        -- by the Augmentation Evoker "Future Self" aura expiring on UNIT_AURA)
+        -- time to finish before we re-apply our saved position on top of it.
+        C_Timer.After(0.05, function()
+            applyPending = false
+            ApplyPosition()
+        end)
+    end
+
     local pewFrame = CreateFrame("Frame")
     pewFrame:EnableMouse(false)
     pewFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     pewFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
+    -- UNIT_AURA catches the Augmentation Evoker "Future Self" buff falling off
+    -- at the end of Breath of Eons.  Blizzard hooks the same event internally
+    -- to re-anchor EssencePlayerFrame, which caused the post-landing reset.
+    pewFrame:RegisterEvent("UNIT_AURA")
     pewFrame:SetScript("OnEvent", function(_, event, unit)
         if event == "UNIT_EXITED_VEHICLE" and unit ~= "player" then return end
-        -- Blizzard re-anchors EssencePlayerFrame after these events fire.
-        -- Defer one frame so our SetPoint lands after their layout pass.
-        C_Timer.After(0, ApplyPosition)
+        if event == "UNIT_AURA"           and unit ~= "player" then return end
+        DeferredApply()
     end)
 
     -- Spec changes also cause Blizzard to re-anchor. Register only on Evoker.
