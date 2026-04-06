@@ -393,3 +393,12 @@ function ShodoQoL.OnReady(fn)
     ShodoQoL.onReady = ShodoQoL.onReady or {}
     table.insert(ShodoQoL.onReady, fn)
 end
+
+------------------------------------------------------------------------
+-- Slash commands  /shodoqol  /sqol
+------------------------------------------------------------------------
+SLASH_SHODOQOL1 = "/shodoqol"
+SLASH_SHODOQOL2 = "/sqol"
+SlashCmdList["SHODOQOL"] = function()
+    Settings.OpenToCategory(ShodoQoL.rootCategory:GetID())
+end
