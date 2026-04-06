@@ -123,6 +123,18 @@ local p2Mgr = CreateMacroManager({
     end,
 })
 
+local cfMgr = CreateMacroManager({
+    macroName = "CauterizingFlame",
+    macroIcon = 134400,
+    dbKey     = "cauterizingFlame",
+    buildBody = function(target)
+        if not target then return "#showtooltip\n/cast Cauterizing Flame" end
+        return string.format(
+            "#showtooltip\n/cast [@%s,nodead] Cauterizing Flame\n/cast Cauterizing Flame",
+            target)
+    end,
+})
+
 ------------------------------------------------------------------------
 -- Notify PrescienceTracker when any target changes
 ------------------------------------------------------------------------
@@ -339,14 +351,17 @@ end
 ------------------------------------------------------------------------
 -- Build three cards, each anchored below the previous card's divider
 ------------------------------------------------------------------------
-local spCard = BuildMacroCard(topDiv,
-    "|cff33937fSpatial|r|cff52c4afParadox|r", spMgr)
-
-local p1Card = BuildMacroCard(spCard.bottomDiv,
+local p1Card = BuildMacroCard(topDiv,
     "|cff33937fPrescience|r |cff52c4af1|r", p1Mgr)
 
 local p2Card = BuildMacroCard(p1Card.bottomDiv,
     "|cff33937fPrescience|r |cff52c4af2|r", p2Mgr)
+
+local spCard = BuildMacroCard(p2Card.bottomDiv,
+    "|cff33937fSpatial|r|cff52c4afParadox|r", spMgr)
+
+local cfCard = BuildMacroCard(spCard.bottomDiv,
+    "|cff33937fCauterizing|r|cff52c4afFlame|r", cfMgr)
 
 local subCat = Settings.RegisterCanvasLayoutSubcategory(ShodoQoL.rootCategory, panel, "Macro Helpers")
 Settings.RegisterAddOnCategory(subCat)
@@ -360,14 +375,12 @@ ShodoQoL.OnReady(function()
     spMgr.CleanupGlobalDuplicate()
     p1Mgr.CleanupGlobalDuplicate()
     p2Mgr.CleanupGlobalDuplicate()
+    cfMgr.CleanupGlobalDuplicate()
 
-    spCard.RefreshStatus()  ; spCard.RefreshCurrentLabel()
     p1Card.RefreshStatus()  ; p1Card.RefreshCurrentLabel()
     p2Card.RefreshStatus()  ; p2Card.RefreshCurrentLabel()
-
-    local spDB = spMgr.GetDB()
-    spCard.nameBox:SetText(spDB.targetName  or "")
-    spCard.realmBox:SetText(spDB.targetRealm or "")
+    spCard.RefreshStatus()  ; spCard.RefreshCurrentLabel()
+    cfCard.RefreshStatus()  ; cfCard.RefreshCurrentLabel()
 
     local p1DB = p1Mgr.GetDB()
     p1Card.nameBox:SetText(p1DB.targetName  or "")
@@ -377,7 +390,16 @@ ShodoQoL.OnReady(function()
     p2Card.nameBox:SetText(p2DB.targetName  or "")
     p2Card.realmBox:SetText(p2DB.targetRealm or "")
 
-    spMgr.Update()
+    local spDB = spMgr.GetDB()
+    spCard.nameBox:SetText(spDB.targetName  or "")
+    spCard.realmBox:SetText(spDB.targetRealm or "")
+
+    local cfDB = cfMgr.GetDB()
+    cfCard.nameBox:SetText(cfDB.targetName  or "")
+    cfCard.realmBox:SetText(cfDB.targetRealm or "")
+
     p1Mgr.Update()
     p2Mgr.Update()
+    spMgr.Update()
+    cfMgr.Update()
 end)

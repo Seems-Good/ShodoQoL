@@ -28,6 +28,10 @@ ShodoQoL.DEFAULTS = {
         targetName = nil,
         targetRealm = nil,
     },
+    cauterizingFlame = {
+        targetName = nil,
+        targetRealm = nil,
+    },
     hearthStoned = {
         items = {},
         index = 1,
@@ -75,6 +79,8 @@ ShodoQoL.DEFAULTS = {
         posX     = 0,
         posY     = -200,
         locked   = false,
+        scale    = 1.0,
+        opacity  = 1.0,
     },
     -- Per-module enabled flags. false = disabled (requires reload to take effect).
     enabled = {
@@ -205,7 +211,7 @@ local MODULES = {
     { name = "Prescience Tracker", key = "PrescienceTracker",
       desc = "Live HUD showing Prescience buff state on your P1 and P2 targets. "
           .. "Colour-coded: green (active), orange (expiring), red (missing), grey (not in group). "
-          .. "Purely event-driven — zero CPU overhead." },
+          .. "Purely event-driven — zero CPU overhead. Augmentation Evoker only." },
 }
 
 local function Divider(parent, anchor, offY)
