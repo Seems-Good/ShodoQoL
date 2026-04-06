@@ -13,7 +13,7 @@
 
 Core.lua
 EssenceMover.lua
-SpatialParadox.lua
+MacroHelpers.lua
 HearthStoned.lua
 C-Inspect.lua
 DoNotRelease.lua

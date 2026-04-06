@@ -20,6 +20,14 @@ ShodoQoL.DEFAULTS = {
         targetName = nil,
         targetRealm = nil,
     },
+    prescience1 = {
+        targetName = nil,
+        targetRealm = nil,
+    },
+    prescience2 = {
+        targetName = nil,
+        targetRealm = nil,
+    },
     hearthStoned = {
         items = {},
         index = 1,
@@ -64,7 +72,7 @@ ShodoQoL.DEFAULTS = {
     -- Per-module enabled flags. false = disabled (requires reload to take effect).
     enabled = {
         EssenceMover   = true,
-        SpatialParadox = true,
+        MacroHelpers   = true,
         HearthStoned   = true,
         CInspect       = true,
         DoNotRelease   = true,
@@ -163,7 +171,7 @@ end
 ------------------------------------------------------------------------
 -- Root Settings panel
 ------------------------------------------------------------------------
-local VERSION = "@project-version@"
+local VERSION = "v1.4.0"
 
 -- key = ShodoQoLDB.enabled key (nil = no toggle, e.g. always-on modules)
 -- addonKey = standalone addon name to check with IsAddOnLoaded
@@ -171,9 +179,9 @@ local MODULES = {
     { name = "Essence Mover", key = "EssenceMover",
       desc = "Drag your Evoker Essence bar anywhere on screen. "
           .. "Adjust scale with a live slider. Position persists across reloads and spec changes." },
-    { name = "Spatial Paradox", key = "SpatialParadox",
-      desc = "Auto-generates a |cff52c4af/cast [@Name,nodead]|r macro for Spatial Paradox (Bronze). "
-          .. "Supports cross-realm targets. Per-character macro slot." },
+    { name = "Macro Helpers", key = "MacroHelpers",
+      desc = "Per-character macros with cross-realm support: |cff52c4afSpatial Paradox|r, "
+          .. "|cff52c4afPrescience 1|r, and |cff52c4afPrescience 2|r — each targeting an independent player." },
     { name = "HearthStoned", key = "HearthStoned",
       desc = "Cycles through all owned hearthstone toys with a single per-character macro. "
           .. "Rescan at any time to pick up new toys." },
@@ -324,7 +332,7 @@ footer1:SetPoint("TOPLEFT", div1, "BOTTOMLEFT", 0, -14)
 footer1:SetWidth(560)
 footer1:SetJustifyH("LEFT")
 footer1:SetText(
-    "|cff52c4afVersion:|r " .. VERSION .. " " .. "@project-date-iso@"
+    "|cff52c4afVersion:|r " .. VERSION .. " " .. "2026-03-28T18:12:49Z"
     .. " |cff52c4afWebsite:|r https://seemsgood.org"
     .. " |cff52c4afKo-fi:|r https://ko-fi.com/j51b5"
 )
