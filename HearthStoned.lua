@@ -73,13 +73,9 @@ local function CurrentMacroBody()
     return "#showtooltip\n/use item:" .. itemID .. "\n/run ShodoQoL.HearthStoned.Cycle()" 
 end
 
--- Forward declaration: RefreshList is defined later but called from UpdateMacro.
-local RefreshList
-
 local function UpdateMacro()
     if not MacroExists() then return end
     EditMacro(GetMacroIndexByName(MACRO_NAME), MACRO_NAME, MACRO_ICON, CurrentMacroBody())
-    if RefreshList then RefreshList() end
 end
 
 -- Exposed so the macro's /run line can call it
@@ -90,7 +86,11 @@ function ShodoQoL.HearthStoned.Cycle()
 
     local db = ShodoQoLDB.hearthStoned
     db.index = (db.index % #ownedItems) + 1
-    UpdateMacro()
+    -- Defer EditMacro by one frame.  Calling it synchronously from within
+    -- the macro's own /run line modifies the macro body while WoW's parser
+    -- still holds a byte-offset into the old body; the offset then lands on
+    -- a stray '(' or ')' in the new body which WoW echoes to chat.
+    C_Timer.After(0, UpdateMacro)
 end
 
 ------------------------------------------------------------------------
