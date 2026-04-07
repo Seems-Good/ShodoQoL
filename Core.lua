@@ -209,9 +209,9 @@ local MODULES = {
       desc = "Evoker-only. Glows green/amber/red behind your cast bar based on whether Hover lets you "
           .. "move while casting. Alerts when Hover has no charges. Configurable font, size, and opacity." },
     { name = "Prescience Tracker", key = "PrescienceTracker",
-      desc = "Live HUD showing Prescience buff state on your P1 and P2 targets. "
-          .. "Colour-coded: green (active), orange (expiring), red (missing), grey (not in group). "
-          .. "Purely event-driven — zero CPU overhead. Augmentation Evoker only." },
+      desc = "Live Prescience buff state tracking 'aura' on your P1 and P2 targets. "
+          .. "Color-coded: green o (active), orange ! (expiring), red x (missing), grey - (not in group). "
+          .. "Purely event-driven with zero CPU overhead. Augmentation Evoker only." },
 }
 
 local function Divider(parent, anchor, offY)
