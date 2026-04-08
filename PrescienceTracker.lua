@@ -27,9 +27,10 @@ local PT = ShodoQoL.PrescienceTracker
 ------------------------------------------------------------------------
 -- Constants
 ------------------------------------------------------------------------
-local PRESCIENCE_NAME = "Prescience"
-local WARN_SEC        = 5        -- seconds remaining → orange
-local AUG_SPEC_ID     = 1473     -- Augmentation Evoker specialization ID
+local PRESCIENCE_NAME     = "Prescience"
+local PRESCIENCE_SPELL_ID = 410089   -- fallback match for non-English clients
+local WARN_SEC            = 5        -- seconds remaining → orange
+local AUG_SPEC_ID         = 1473     -- Augmentation Evoker specialization ID
 
 ------------------------------------------------------------------------
 -- Spec gate
@@ -68,7 +69,7 @@ local function ScanUnit(token)
     for i = 1, 40 do
         local aura = C_UnitAuras.GetBuffDataByIndex(token, i)
         if not aura then break end
-        if aura.name == PRESCIENCE_NAME then
+        if aura.name == PRESCIENCE_NAME or aura.spellId == PRESCIENCE_SPELL_ID then
             return true, aura.expirationTime or 0
         end
     end
@@ -102,8 +103,18 @@ local function TokenForTarget(db)
     if not db or not db.targetName or db.targetName == "" then return nil end
     local needle      = db.targetName:lower()
     local realmNeedle = db.targetRealm and db.targetRealm:lower() or ""
-    for token, d in pairs(unitData) do
+    -- Always check "player" first so that UNIT_AURA("player") is never
+    -- shadowed by a duplicate raidX entry with the same name in a raid.
+    if unitData["player"] then
+        local d = unitData["player"]
         if d.name:lower() == needle then
+            if realmNeedle == "" or d.realm == "" or d.realm:lower() == realmNeedle then
+                return "player"
+            end
+        end
+    end
+    for token, d in pairs(unitData) do
+        if token ~= "player" and d.name:lower() == needle then
             if realmNeedle == "" or d.realm == "" or d.realm:lower() == realmNeedle then
                 return token
             end
@@ -237,7 +248,7 @@ local function DrawRow(slotIdx)
     end
 
     local remaining = 0
-    if d.hasBuff and d.expirationTime >= 0 then
+    if d.hasBuff then
         remaining = math.max(0, d.expirationTime - GetTime())
     end
 
@@ -379,14 +390,43 @@ eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("UNIT_CONNECTION")
 
-eventFrame:SetScript("OnEvent", function(_, event, unitID)
+eventFrame:SetScript("OnEvent", function(_, event, unitID, updateInfo)
     if event == "UNIT_AURA" then
         -- Hot path: two comparisons, bail immediately for irrelevant units
         if unitID ~= p1Token and unitID ~= p2Token then return end
         local slotIdx = (unitID == p1Token) and 1 or 2
 
-        local ok, hasBuff, expTime = pcall(ScanUnit, unitID)
-        if not ok then return end
+        -- Prefer updateInfo.addedAuras: it is populated at event-fire time and
+        -- is not subject to the API-lag race that GetBuffDataByIndex has on a
+        -- fresh buff apply.  Fall through to a full scan for modification /
+        -- removal events (where addedAuras is absent or empty).
+        local hasBuff, expTime = false, 0
+        if updateInfo and updateInfo.addedAuras then
+            for _, aura in ipairs(updateInfo.addedAuras) do
+                -- aura.name must never be compared: even when type() returns "string"
+                -- it can be a tainted string, and == against a clean value errors.
+                -- spellId is a number; type() returning "number" is necessary but not
+                -- sufficient — a tainted number could also error — so wrap in pcall.
+                -- Partial entries (auraInstanceID-only) have spellId as tainted nil;
+                -- type() returns "nil", pcall body never runs, we skip safely.
+                if type(aura.spellId) == "number" then
+                    local ok, matched = pcall(function()
+                        return aura.spellId == PRESCIENCE_SPELL_ID
+                    end)
+                    if ok and matched then
+                        hasBuff = true
+                        expTime = type(aura.expirationTime) == "number" and aura.expirationTime or 0
+                        break
+                    end
+                end
+            end
+        end
+        if not hasBuff then
+            -- Modification or removal event — scan the current aura list.
+            local ok
+            ok, hasBuff, expTime = pcall(ScanUnit, unitID)
+            if not ok then return end
+        end
 
         local d = unitData[unitID]
         if d then
