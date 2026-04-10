@@ -18,7 +18,7 @@ Evoker-only. Glows green, amber, or red behind your cast bar based on whether Ho
 ### Prescience Tracker
 **Key:** `PrescienceTracker`  
 **Description:**  
-Live Prescience buff state tracking "aura" on your P1 and P2 targets. Purely event-driven with zero CPU overhead. Augmentation Evoker only.
+Live Prescience buff state tracking "aura" on your P1 and P2 targets. Purely event-driven with zero CPU overhead. Augmentation Evoker only.              
 Color-coded:
 - 🟢 active (`o`)
 - 🟠 expiring (`!`)
