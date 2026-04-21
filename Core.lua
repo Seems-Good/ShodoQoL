@@ -32,6 +32,10 @@ ShodoQoL.DEFAULTS = {
         targetName = nil,
         targetRealm = nil,
     },
+    blisteringScales = {
+        targetName = nil,
+        targetRealm = nil,
+    },
     hearthStoned = {
         items = {},
         index = 1,
@@ -84,15 +88,15 @@ ShodoQoL.DEFAULTS = {
     },
     -- Per-module enabled flags. false = disabled (requires reload to take effect).
     enabled = {
-        EssenceMover   = true,
-        MacroHelpers   = true,
-        HearthStoned   = true,
-        CInspect       = true,
-        DoNotRelease   = true,
-        ShoStats       = true,
-        SourceOfMagic  = true,
-        HoverTracker        = true,
-        PrescienceTracker   = true,
+        EssenceMover    = true,
+        MacroHelpers    = true,
+        HearthStoned    = true,
+        CInspect        = true,
+        DoNotRelease    = true,
+        ShoStats        = true,
+        SourceOfMagic   = true,
+        HoverTracker    = true,
+        PrescienceTracker = true,
     },
 }
 
@@ -113,9 +117,15 @@ end
 
 ------------------------------------------------------------------------
 -- IsEnabled
+-- Safe to call at file-load time (before PLAYER_LOGIN): falls back to
+-- DEFAULTS when ShodoQoLDB hasn't been initialised yet.
 ------------------------------------------------------------------------
 function ShodoQoL.IsEnabled(key)
-    return ShodoQoLDB.enabled[key] ~= false
+    if type(ShodoQoLDB) == "table" then
+        return ShodoQoLDB.enabled[key] ~= false
+    end
+    -- DB not ready yet — consult compile-time defaults
+    return ShodoQoL.DEFAULTS.enabled[key] ~= false
 end
 
 ------------------------------------------------------------------------
@@ -212,7 +222,7 @@ local MODULES = {
       desc = "Live Prescience buff state tracking 'aura' on your P1 and P2 targets. "
           .. "Color-coded: green o (active), orange ! (expiring), red x (missing), grey - (not in group). "
           .. "Purely event-driven with zero CPU overhead. Augmentation Evoker only." },
-}
+  }
 
 local function Divider(parent, anchor, offY)
     local d = parent:CreateTexture(nil, "ARTWORK")

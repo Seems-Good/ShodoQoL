@@ -135,6 +135,18 @@ local cfMgr = CreateMacroManager({
     end,
 })
 
+local bsMgr = CreateMacroManager({
+    macroName = "BlisteringScales",
+    macroIcon = 134400,
+    dbKey     = "blisteringScales",
+    buildBody = function(target)
+        if not target then return "#showtooltip\n/cast Blistering Scales" end
+        return string.format(
+            "#showtooltip\n/cast [@%s,nodead] Blistering Scales\n/cast Blistering Scales",
+            target)
+    end,
+})
+
 ------------------------------------------------------------------------
 -- Notify PrescienceTracker when any target changes
 ------------------------------------------------------------------------
@@ -333,9 +345,9 @@ local function BuildMacroCard(topAnchor, headingText, mgr)
     -- ── Bottom divider ────────────────────────────────────────────────
     -- nameLabelFS (~12px) is the vertical reference. Edit boxes (22px)
     -- are vertically centred on it, so they extend 5px below its bottom.
-    -- We offset 18px below nameLabelFS bottom → 13px clear gap after boxes.
+    -- We offset 10px below nameLabelFS bottom → 13px clear gap after boxes.
     local bottomDiv = panel:CreateTexture(nil, "ARTWORK")
-    bottomDiv:SetPoint("TOPLEFT", nameLabelFS, "BOTTOMLEFT", 0, -18)
+    bottomDiv:SetPoint("TOPLEFT", nameLabelFS, "BOTTOMLEFT", 0, -12)
     bottomDiv:SetSize(560, 1)
     bottomDiv:SetColorTexture(0.20, 0.58, 0.50, 0.6)
 
@@ -349,7 +361,7 @@ local function BuildMacroCard(topAnchor, headingText, mgr)
 end
 
 ------------------------------------------------------------------------
--- Build three cards, each anchored below the previous card's divider
+-- Build cards, each anchored below the previous card's divider
 ------------------------------------------------------------------------
 local p1Card = BuildMacroCard(topDiv,
     "|cff33937fPrescience|r |cff52c4af1|r", p1Mgr)
@@ -362,6 +374,9 @@ local spCard = BuildMacroCard(p2Card.bottomDiv,
 
 local cfCard = BuildMacroCard(spCard.bottomDiv,
     "|cff33937fCauterizing|r|cff52c4afFlame|r", cfMgr)
+
+local bsCard = BuildMacroCard(cfCard.bottomDiv,
+    "|cff33937fBlistering|r|cff52c4afScales|r", bsMgr)
 
 local subCat = Settings.RegisterCanvasLayoutSubcategory(ShodoQoL.rootCategory, panel, "Macro Helpers")
 Settings.RegisterAddOnCategory(subCat)
@@ -376,11 +391,13 @@ ShodoQoL.OnReady(function()
     p1Mgr.CleanupGlobalDuplicate()
     p2Mgr.CleanupGlobalDuplicate()
     cfMgr.CleanupGlobalDuplicate()
+    bsMgr.CleanupGlobalDuplicate()
 
     p1Card.RefreshStatus()  ; p1Card.RefreshCurrentLabel()
     p2Card.RefreshStatus()  ; p2Card.RefreshCurrentLabel()
     spCard.RefreshStatus()  ; spCard.RefreshCurrentLabel()
     cfCard.RefreshStatus()  ; cfCard.RefreshCurrentLabel()
+    bsCard.RefreshStatus()  ; bsCard.RefreshCurrentLabel()
 
     local p1DB = p1Mgr.GetDB()
     p1Card.nameBox:SetText(p1DB.targetName  or "")
@@ -398,8 +415,13 @@ ShodoQoL.OnReady(function()
     cfCard.nameBox:SetText(cfDB.targetName  or "")
     cfCard.realmBox:SetText(cfDB.targetRealm or "")
 
+    local bsDB = bsMgr.GetDB()
+    bsCard.nameBox:SetText(bsDB.targetName  or "")
+    bsCard.realmBox:SetText(bsDB.targetRealm or "")
+
     p1Mgr.Update()
     p2Mgr.Update()
     spMgr.Update()
     cfMgr.Update()
+    bsMgr.Update()
 end)
