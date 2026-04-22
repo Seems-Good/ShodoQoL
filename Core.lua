@@ -93,7 +93,7 @@ ShodoQoL.DEFAULTS = {
         HearthStoned    = true,
         CInspect        = true,
         DoNotRelease    = true,
-        ShoStats        = true,
+        --ShoStats        = true,
         SourceOfMagic   = true,
         HoverTracker    = true,
         PrescienceTracker = true,
@@ -212,9 +212,9 @@ local MODULES = {
     { name = "Source of Magic", key = "SourceOfMagic",
       desc = "Out-of-combat popup when Source of Magic is missing from your configured target. "
           .. "Only active when talented into Source of Magic. Use |cff52c4af/som test|r to preview." },
-    { name = "ShoStats", key = "ShoStats",
-      desc = "Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, "
-          .. "with draggable frame, opacity/scale sliders, and per-stat visibility toggles." },
+--    { name = "ShoStats", key = "ShoStats",
+--      desc = "Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, "
+ --         .. "with draggable frame, opacity/scale sliders, and per-stat visibility toggles." },
     { name = "Hover Tracker", key = "HoverTracker",
       desc = "Evoker-only. Glows green/amber/red behind your cast bar based on whether Hover lets you "
           .. "move while casting. Alerts when Hover has no charges. Configurable font, size, and opacity." },
