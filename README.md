@@ -65,7 +65,6 @@ Hold `Ctrl` and `left-click` a friendly player to inspect them. Also registers `
 **Description:**  
 Pulsing warning when you die in a group instance. Configurable text, color, font, and position. Use `/dnr test` to preview.
 
-
 ### ShoStats [disabled after v1.7.1]  (Broken in WoW patch 12.0.5 with new combat api restrictions)
 ~~**Key:** `ShoStats` 
 **Description:**  
