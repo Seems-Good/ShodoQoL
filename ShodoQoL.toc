@@ -14,12 +14,12 @@
 Libs\TOTP.lua
 
 Core.lua
-EssenceMover.lua
-MacroHelpers.lua
-HearthStoned.lua
-C-Inspect.lua
-DoNotRelease.lua
-SourceOfMagic.lua
-HoverTracker.lua
-PrescienceTracker.lua
-MouseCircle.lua
+Modules\EssenceMover.lua
+Modules\MacroHelpers.lua
+Modules\HearthStoned.lua
+Modules\C-Inspect.lua
+Modules\DoNotRelease.lua
+Modules\SourceOfMagic.lua
+Modules\HoverTracker.lua
+Modules\PrescienceTracker.lua
+Modules\MouseCircle.lua
