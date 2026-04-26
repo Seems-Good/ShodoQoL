@@ -173,6 +173,24 @@ local subFS = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 subFS:SetPoint("TOPLEFT", titleFS, "BOTTOMLEFT", 0, -6)
 subFS:SetText("|cff888888Per-character macros with cross-realm support|r")
 
+------------------------------------------------------------------------
+-- Mythic+ Auto button — lives in the empty header space to the right
+-- of the title block. Anchored to titleFS so it never shifts layout.
+-- OnClick is wired AFTER the cards are built (below) so the closure
+-- captures p1Card / p2Card / bsCard after they are assigned.
+------------------------------------------------------------------------
+local mythicAutoBtn = ShodoQoL.CreateButton(panel, "Mythic+ Auto", 110, 22)
+mythicAutoBtn:SetPoint("LEFT", titleFS, "RIGHT", 16, 0)
+
+local clearAllBtn = ShodoQoL.CreateButton(panel, "Clear All", 76, 22)
+clearAllBtn:SetPoint("LEFT", mythicAutoBtn, "RIGHT", 6, 0)
+do
+    local redTint = clearAllBtn:CreateTexture(nil, "OVERLAY")
+    redTint:SetAllPoints()
+    redTint:SetColorTexture(0.6, 0.05, 0.05, 0.35)
+    redTint:SetBlendMode("ADD")
+end
+
 local topDiv = panel:CreateTexture(nil, "ARTWORK")
 topDiv:SetPoint("TOPLEFT", subFS, "BOTTOMLEFT", 0, -12)
 topDiv:SetSize(560, 1)
@@ -377,6 +395,82 @@ local cfCard = BuildMacroCard(spCard.bottomDiv,
 
 local bsCard = BuildMacroCard(cfCard.bottomDiv,
     "|cff33937fBlistering|r|cff52c4afScales|r", bsMgr)
+
+------------------------------------------------------------------------
+-- Mythic+ Auto — OnClick wired here so p1Card / p2Card / bsCard are
+-- already assigned as locals and captured correctly by the closure.
+------------------------------------------------------------------------
+mythicAutoBtn:SetScript("OnClick", function()
+    local tank, dps1, dps2
+
+    local unitPrefix = IsInRaid() and "raid" or "party"
+    local unitCount  = GetNumGroupMembers()
+
+    for i = 1, unitCount do
+        local unit = unitPrefix .. i
+        if UnitExists(unit) and not UnitIsUnit(unit, "player") then
+            local role = UnitGroupRolesAssigned(unit)
+            local name, realm = UnitName(unit)
+            if name then
+                realm = realm or ""
+                if role == "TANK" and not tank then
+                    tank = { name = name, realm = realm }
+                elseif role == "DAMAGER" then
+                    if not dps1 then
+                        dps1 = { name = name, realm = realm }
+                    elseif not dps2 then
+                        dps2 = { name = name, realm = realm }
+                    end
+                end
+            end
+        end
+    end
+
+    local function ApplyTarget(mgr, card, entry)
+        if not entry then return end
+        local db = mgr.GetDB()
+        db.targetName  = entry.name
+        db.targetRealm = entry.realm
+        card.nameBox:SetText(entry.name)
+        card.realmBox:SetText(entry.realm)
+        mgr.Update()
+        card.RefreshCurrentLabel()
+    end
+
+    ApplyTarget(bsMgr, bsCard, tank)
+    ApplyTarget(p1Mgr, p1Card, dps1)
+    ApplyTarget(p2Mgr, p2Card, dps2)
+    NotifyTracker()
+
+    local function fmt(e)
+        if not e then return "|cffff6060none|r" end
+        return (e.realm ~= "") and
+            string.format("|cffffd100%s|r |cff888888(%s)|r", e.name, e.realm) or
+            string.format("|cffffd100%s|r", e.name)
+    end
+
+    print(string.format(
+        "|cff33937fShodoQoL|r: M+ Auto — Tank(BS): %s  DPS1(P1): %s  DPS2(P2): %s",
+        fmt(tank), fmt(dps1), fmt(dps2)))
+end)
+
+------------------------------------------------------------------------
+-- Clear All — OnClick wired here for the same reason as mythicAutoBtn.
+------------------------------------------------------------------------
+clearAllBtn:SetScript("OnClick", function()
+    local allMgrs = { p1Mgr, p2Mgr, spMgr, cfMgr, bsMgr }
+    local allCards = { p1Card, p2Card, spCard, cfCard, bsCard }
+    for i, mgr in ipairs(allMgrs) do
+        local db = mgr.GetDB()
+        db.targetName, db.targetRealm = nil, nil
+        allCards[i].nameBox:SetText("")
+        allCards[i].realmBox:SetText("")
+        mgr.Update()
+        allCards[i].RefreshCurrentLabel()
+    end
+    NotifyTracker()
+    print("|cff33937fShodoQoL|r: All macro targets cleared.")
+end)
 
 local subCat = Settings.RegisterCanvasLayoutSubcategory(ShodoQoL.rootCategory, panel, "Macro Helpers")
 Settings.RegisterAddOnCategory(subCat)

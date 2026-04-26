@@ -199,8 +199,8 @@ end
 ------------------------------------------------------------------------
 -- Root Settings panel
 ------------------------------------------------------------------------
-local VERSION = "v1.7.1"
-local TIMESTAMP = "2026-04-22T03:56:26Z"
+local VERSION = "@project-version@"
+local TIMESTAMP = "@project-date-iso@"
 
 local MODULES = {
     { name = "Essence Mover", key = "EssenceMover",
