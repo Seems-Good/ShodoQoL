@@ -11,6 +11,8 @@
 ## X-Website: https://github.com/Seems-Good/ShodoQoL
 ## X-Curse-Project-ID: 1497535
 
+Libs\TOTP.lua
+
 Core.lua
 EssenceMover.lua
 MacroHelpers.lua
