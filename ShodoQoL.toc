@@ -20,3 +20,4 @@ DoNotRelease.lua
 SourceOfMagic.lua
 HoverTracker.lua
 PrescienceTracker.lua
+MouseCircle.lua

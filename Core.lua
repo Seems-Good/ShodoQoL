@@ -86,6 +86,14 @@ ShodoQoL.DEFAULTS = {
         scale    = 1.0,
         opacity  = 1.0,
     },
+    mouseCircle = {
+        colorR    = 1.00,
+        colorG    = 1.00,
+        colorB    = 1.00,
+        colorA    = 1.00,
+        thickness = 2,
+        radius    = 16,
+    },
     -- Per-module enabled flags. false = disabled (requires reload to take effect).
     enabled = {
         EssenceMover    = true,
@@ -97,6 +105,7 @@ ShodoQoL.DEFAULTS = {
         SourceOfMagic   = true,
         HoverTracker    = true,
         PrescienceTracker = true,
+        MouseCircle     = false,
     },
 }
 
@@ -190,8 +199,8 @@ end
 ------------------------------------------------------------------------
 -- Root Settings panel
 ------------------------------------------------------------------------
-local VERSION = "@project-version@"
-local TIMESTAMP = "@project-date-iso@"
+local VERSION = "v1.7.1"
+local TIMESTAMP = "2026-04-22T03:56:26Z"
 
 local MODULES = {
     { name = "Essence Mover", key = "EssenceMover",
@@ -222,6 +231,10 @@ local MODULES = {
       desc = "Live Prescience buff state tracking 'aura' on your P1 and P2 targets. "
           .. "Color-coded: green o (active), orange ! (expiring), red x (missing), grey - (not in group). "
           .. "Purely event-driven with zero CPU overhead. Augmentation Evoker only." },
+    { name = "Mouse Circle", key = "MouseCircle",
+      desc = "Draws a thin colored ring around your cursor at all times. "
+          .. "Configurable color and thickness. Uses a minimal OnUpdate — "
+          .. "just one API call and a SetPoint per frame, no logic or allocations." },
   }
 
 local function Divider(parent, anchor, offY)

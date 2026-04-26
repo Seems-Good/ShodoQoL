@@ -40,6 +40,12 @@ Out-of-combat popup when Source of Magic is missing from your configured target.
 
 # Modules for all classes:
 
+### Mouse Circle (Mouse icon tracker)
+**Key:** `MouseCircle`
+**Description:**  
+Configure Size, Thickness, and Color of the circle around mouse. (uses a local circle.tga capped at refreshing every 30 frames.)
+
+
 ### HearthStoned
 **Key:** `HearthStoned`  
 **Description:**  
@@ -59,7 +65,8 @@ Hold `Ctrl` and `left-click` a friendly player to inspect them. Also registers `
 **Description:**  
 Pulsing warning when you die in a group instance. Configurable text, color, font, and position. Use `/dnr test` to preview.
 
-### ShoStats
-**Key:** `ShoStats`  
+
+### ShoStats [disabled after v1.7.1]  (Broken in WoW patch 12.0.5 with new combat api restrictions)
+~~**Key:** `ShoStats` 
 **Description:**  
-Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, with draggable frame, opacity/scale sliders, and per-stat visibility toggles.
+Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, with draggable frame, opacity/scale sliders, and per-stat visibility toggles.~~
