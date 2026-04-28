@@ -39,12 +39,12 @@ Color-coded:
 ### Macro Helpers
 **Key:** `MacroHelpers`  
 **Description:**  
-Per-character macros with cross-realm support: `Spatial Paradox`, `Prescience 1`, and `Prescience 2` — each targeting an independent player. Also provides helpers for `Cauterizing Flame`, `Blistering Scales`, and `Source of Magic` targets so your macros stay stable across realm names and renames. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/8436809/20cff35b-b60d-4131-b37b-219f0950973e/paste.txt)
+Per-character macros with cross-realm support: `Spatial Paradox`, `Prescience 1`, and `Prescience 2` - each targeting an independent player. Also provides helpers for `Cauterizing Flame`, `Blistering Scales`, and `Source of Magic` targets so your macros stay stable across realm names and renames.
 
 ### Source of Magic
 **Key:** `SourceOfMagic`  
 **Description:**  
-Out-of-combat popup when Source of Magic is missing from your configured target. Only active when talented into Source of Magic. Uses token-scoped events (no global UNIT_AURA spam) so it stays lightweight even in large raids. Use `/som test` to preview. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/8436809/20cff35b-b60d-4131-b37b-219f0950973e/paste.txt)
+Out-of-combat popup when Source of Magic is missing from your configured target. Only active when talented into Source of Magic. Uses token-scoped events (no global UNIT_AURA spam) so it stays lightweight even in large raids. Use `/som test` to preview.
 
 ***
 
@@ -58,8 +58,7 @@ Configure Size, Thickness, and Color of the circle around your mouse. Uses a loc
 ### Kicksmaxxing
 **Key:** `Kicksmaxxing`  
 **Description:**  
-Dynamic focus-macro generator for interrupts, stuns, and CC. Enter any spell name to get a `KM_SpellName` character macro that casts on your focus when it is alive and hostile, otherwise focuses-and-casts on the next enemy. Enable up to 5 spells at once from the settings panel. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/8436809/20cff35b-b60d-4131-b37b-219f0950973e/paste.txt)
-
+Dynamic focus-macro generator for interrupts, stuns, and CC. Enter any spell name to get a `KM_SpellName` character macro that casts on your focus when it is alive and hostile, otherwise focuses-and-casts on the next enemy. Enable up to 5 spells at once from the settings panel. 
 
 ### HearthStoned
 **Key:** `HearthStoned`  
@@ -78,9 +77,12 @@ Hold `Ctrl` and `left-click` a friendly player to inspect them. Also registers `
 **Addon Key:** `DoNotRelease` - [Github](https://github.com/Seems-Good/DNRs) - [Curse](https://www.curseforge.com/wow/addons/do-not-release)  
 
 **Description:**  
-Pulsing warning when you die in a group instance. Configurable text, color, font, and position. Use `/dnr test` to preview. Includes an optional 2FA-style overlay for release confirmation, with a low-cost timer that updates the “code refreshes in Xs” countdown once per second. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/8436809/20cff35b-b60d-4131-b37b-219f0950973e/paste.txt)
+Pulsing warning when you die in a group instance. Configurable text, color, font, and position. Use `/dnr test` to preview. Includes an optional 2FA-style overlay for release confirmation, with a low-cost timer that updates the “code refreshes in Xs” countdown once per second.
 
-### ShoStats [disabled after v1.7.1]  (Broken in WoW patch 12.0.5 with new combat API restrictions)
+---
+
 ~~**Key:** `ShoStats`  
 **Description:**  
 Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, with draggable frame, opacity/scale sliders, and per-stat visibility toggles.~~
+
+### ShoStats [disabled after v1.7.1]  (Broken in WoW patch 12.0.5 with new combat API restrictions)
