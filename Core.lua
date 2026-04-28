@@ -56,11 +56,15 @@ ShodoQoL.DEFAULTS = {
         colorR      = 0.20,
         colorG      = 0.75,
         colorB      = 1.00,
-        warningText = "SOURCE OF MAGIC MISSING",
         fontSize    = 52,
         fontFace    = "Fonts\\FRIZQT__.TTF",
         targetName  = nil,
         targetRealm = nil,
+    },
+    kicksmaxxing = {
+        -- Each entry: { name = string, enabled = bool }
+        -- Enabled entries have a live KM_SpellName character macro.
+        spells = {},
     },
     shoStats = {
         point = "CENTER", relTo = "UIParent", relPt = "CENTER",
@@ -96,16 +100,17 @@ ShodoQoL.DEFAULTS = {
     },
     -- Per-module enabled flags. false = disabled (requires reload to take effect).
     enabled = {
-        EssenceMover    = true,
-        MacroHelpers    = true,
-        HearthStoned    = true,
-        CInspect        = true,
-        DoNotRelease    = true,
-        --ShoStats        = true,
-        SourceOfMagic   = true,
-        HoverTracker    = true,
+        EssenceMover      = true,
+        MacroHelpers      = true,
+        HearthStoned      = true,
+        CInspect          = true,
+        DoNotRelease      = true,
+        --ShoStats          = true,
+        SourceOfMagic     = true,
+        HoverTracker      = true,
         PrescienceTracker = true,
-        MouseCircle     = false,
+        MouseCircle       = false,
+        Kicksmaxxing      = true,
     },
 }
 
@@ -235,7 +240,12 @@ local MODULES = {
       desc = "Draws a thin colored ring around your cursor at all times. "
           .. "Configurable color and thickness. Uses a minimal OnUpdate — "
           .. "just one API call and a SetPoint per frame, no logic or allocations." },
-  }
+    { name = "Kicksmaxxing", key = "Kicksmaxxing",
+      desc = "Dynamic focus-macro generator for interrupts, stuns, and CC. "
+          .. "Enter any spell name to create a |cff52c4afKM_SpellName|r character macro that "
+          .. "casts on focus when alive/hostile, otherwise focuses-and-casts on the next enemy. "
+          .. "Enable up to |cff52c4af5|r spells at once with checkboxes." },
+}
 
 local function Divider(parent, anchor, offY)
     local d = parent:CreateTexture(nil, "ARTWORK")
@@ -419,42 +429,94 @@ Settings.RegisterAddOnCategory(ShodoQoL.rootCategory)
 ------------------------------------------------------------------------
 -- Bootstrap
 ------------------------------------------------------------------------
+-- Login message format strings (match the author's colour scheme)
+local COLOR_YELLOW = "|cffffff00"
+local COLOR_GRAY   = "|cff808080"
+local COLOR_BLUE   = "|cff00ccff"
+
+local FORMAT_NAME = COLOR_BLUE .. "[ShodoQoL]|r" .. COLOR_GRAY .. "-(" .. VERSION .. ")|r"
+
+-- Count how many modules are defined (used in the login print)
+local TOTAL_MODULES = #MODULES
+
+-- Status printer — used by both the login message and /sqol status.
+-- Must run after PLAYER_LOGIN so ShodoQoLDB is available.
+local function PrintStatus()
+    local enabledCount = 0
+    for _, mod in ipairs(MODULES) do
+        if ShodoQoLDB.enabled[mod.key] ~= false then
+            enabledCount = enabledCount + 1
+        end
+    end
+
+    print(FORMAT_NAME .. COLOR_YELLOW .. " [" .. enabledCount .. "/" .. TOTAL_MODULES
+        .. "]|r Modules Loaded\n- Type " .. COLOR_YELLOW .. "/sqol status|r to list them.")
+end
+
+local function PrintModuleStatus()
+    print(FORMAT_NAME .. COLOR_YELLOW .. " Module Status:|r")
+    for _, mod in ipairs(MODULES) do
+        local on = ShodoQoLDB.enabled[mod.key] ~= false
+        local badge = on
+            and ("|cff33937f[ON] |r")
+            or  ("|cffff4444[OFF]|r")
+        print("  " .. badge .. " " .. COLOR_BLUE .. mod.name .. "|r")
+    end
+    print("  Use " .. COLOR_YELLOW .. "/sqol|r to open settings. Changes require |r"
+        .. COLOR_YELLOW .. "/rl|r to take effect.")
+end
+
 local boot = CreateFrame("Frame")
 boot:EnableMouse(false)
+boot:RegisterEvent("ADDON_LOADED")
 boot:RegisterEvent("PLAYER_LOGIN")
-boot:SetScript("OnEvent", function(self)
-    self:UnregisterEvent("PLAYER_LOGIN")
+boot:SetScript("OnEvent", function(self, event, arg1)
 
-    if type(ShodoQoLDB) ~= "table" then
-        ShodoQoLDB = CopyTable(ShodoQoL.DEFAULTS)
-    else
-        BackFill(ShodoQoLDB, ShodoQoL.DEFAULTS)
-    end
+    if event == "ADDON_LOADED" and arg1 == "ShodoQoL" then
+        -- Fire at addon load, before PLAYER_LOGIN chat noise.
+        -- DB not yet available here so we only print the name/version line.
+        print(FORMAT_NAME .. "Type "
+            .. COLOR_YELLOW .. "/sqol|r for options.")
+        self:UnregisterEvent("ADDON_LOADED")
 
-    for key, entry in pairs(ShodoQoL._toggleBtns or {}) do
-        local enabled = ShodoQoLDB.enabled[key] ~= false
-        if enabled then
-            entry.label:SetText("|cff33937f[ON]|r")
-            entry.border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.80)
+    elseif event == "PLAYER_LOGIN" then
+        -- SavedVariables are guaranteed available by PLAYER_LOGIN.
+        self:UnregisterEvent("PLAYER_LOGIN")
+
+        if type(ShodoQoLDB) ~= "table" then
+            ShodoQoLDB = CopyTable(ShodoQoL.DEFAULTS)
         else
-            entry.label:SetText("|cffff4444[OFF]|r")
-            entry.border:SetBackdropBorderColor(0.60, 0.10, 0.10, 0.80)
+            BackFill(ShodoQoLDB, ShodoQoL.DEFAULTS)
         end
-    end
 
-    for _, fn in ipairs(ShodoQoL.onReady or {}) do
-        pcall(fn)
-    end
+        -- Now DB is ready: print the loaded N/N modules summary.
+        PrintStatus()
 
-    for addonKey, fs in pairs(ShodoQoL._statusBadges or {}) do
-        if C_AddOns.IsAddOnLoaded(addonKey) then
-            fs:SetText("|cff52c4af[standalone]|r")
-        else
-            fs:SetText("|cff33937f[bundled]|r")
+        for key, entry in pairs(ShodoQoL._toggleBtns or {}) do
+            local enabled = ShodoQoLDB.enabled[key] ~= false
+            if enabled then
+                entry.label:SetText("|cff33937f[ON]|r")
+                entry.border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.80)
+            else
+                entry.label:SetText("|cffff4444[OFF]|r")
+                entry.border:SetBackdropBorderColor(0.60, 0.10, 0.10, 0.80)
+            end
         end
-    end
 
-    ShodoQoL.onReady = nil
+        for _, fn in ipairs(ShodoQoL.onReady or {}) do
+            pcall(fn)
+        end
+
+        for addonKey, fs in pairs(ShodoQoL._statusBadges or {}) do
+            if C_AddOns.IsAddOnLoaded(addonKey) then
+                fs:SetText("|cff52c4af[standalone]|r")
+            else
+                fs:SetText("|cff33937f[bundled]|r")
+            end
+        end
+
+        ShodoQoL.onReady = nil
+    end
 end)
 
 function ShodoQoL.OnReady(fn)
@@ -467,6 +529,22 @@ end
 ------------------------------------------------------------------------
 SLASH_SHODOQOL1 = "/shodoqol"
 SLASH_SHODOQOL2 = "/sqol"
-SlashCmdList["SHODOQOL"] = function()
-    Settings.OpenToCategory(ShodoQoL.rootCategory:GetID())
+SlashCmdList["SHODOQOL"] = function(msg)
+    local cmd = msg and strtrim(msg):lower() or ""
+
+    if cmd == "" then
+        -- /sqol (no args) open the settings panel
+        Settings.OpenToCategory(ShodoQoL.rootCategory:GetID())
+
+    elseif cmd == "status" or cmd == "modules" or cmd == "mods" then
+        PrintModuleStatus()
+
+    elseif cmd == "help" then
+        print(FORMAT_NAME)
+        print("  " .. COLOR_YELLOW .. "/sqol|r          - Open settings panel")
+        print("  " .. COLOR_YELLOW .. "/sqol status|r - List all modules and their on/off state")
+        print("  " .. COLOR_YELLOW .. "/sqol help|r   - Show this message")
+    else
+        Settings.OpenToCategory(ShodoQoL.rootCategory:GetID())
+    end
 end
