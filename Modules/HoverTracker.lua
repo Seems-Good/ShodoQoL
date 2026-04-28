@@ -179,9 +179,6 @@ function UI.ApplySettings()
     end
 end
 
-    if hasNone then
-end
-
 function UI.Update(state)
     if not UI.built then return end
     local c = STATE_COL[state]
@@ -465,7 +462,7 @@ end
 local castOpContainer = MakeOpacityRow("HoverTrackerCastOpSlider",  "Cast Bar Glow",    opacityHeaderFS,  "castOpacity")
 local essOpContainer  = MakeOpacityRow("HoverTrackerEssOpSlider",   "Essence Bar Glow", castOpContainer,  "essOpacity")
 
-local div3 = Div(c, textOpContainer, -14)
+local div3 = Div(c, essOpContainer, -14)
 
 local resetBtn = ShodoQoL.CreateButton(c, "Reset to Defaults", 130, 24)
 resetBtn:SetPoint("TOPLEFT", div3, "BOTTOMLEFT", 0, -14)
