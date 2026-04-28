@@ -421,23 +421,14 @@ totpCancelBtn:SetSize(140, 26)
 totpCancelBtn:SetPoint("BOTTOMRIGHT", totpFrame, "BOTTOMRIGHT", -14, 14)
 totpCancelBtn:SetText("Cancel")
 
-local totpCountdownAccum = 0
-totpFrame:SetScript("OnUpdate", function(self, elapsed)
-    totpCountdownAccum = totpCountdownAccum + elapsed
-    if totpCountdownAccum >= 1 then
-        totpCountdownAccum = 0
-        if DNR_TOTP then
-            totpCountdown:SetText(string.format("Code refreshes in %ds", DNR_TOTP.SecondsRemaining()))
-        end
-    end
-end)
-
 local totpSessionActive = false
 local totpDismissing    = false
+local totpTicker        = nil  -- C_Timer ticker for the 1-second countdown display
 
 local function StopTotpInternal()
     totpDismissing = true
     totpSessionActive = false
+    if totpTicker then totpTicker:Cancel(); totpTicker = nil end
     totpFrame:Hide()
     totpInput:SetText("")
     totpFeedback:SetText("")
@@ -485,7 +476,6 @@ end)
 
 local function StartTotpOverlay()
     totpSessionActive = true
-    totpCountdownAccum = 0
     totpInput:SetText("")
     totpFeedback:SetText("")
     if DNR_TOTP then
@@ -493,6 +483,13 @@ local function StartTotpOverlay()
     end
     totpFrame:Show()
     totpInput:SetFocus()
+    -- Tick once per second to update the countdown display.
+    -- C_Timer.NewTicker has no per-frame cost between ticks.
+    totpTicker = C_Timer.NewTicker(1, function()
+        if DNR_TOTP then
+            totpCountdown:SetText(string.format("Code refreshes in %ds", DNR_TOTP.SecondsRemaining()))
+        end
+    end)
 end
 
 ------------------------------------------------------------------------
