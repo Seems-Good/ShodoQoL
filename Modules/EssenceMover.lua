@@ -234,13 +234,12 @@ ShodoQoL.OnReady(function()
     pewFrame:EnableMouse(false)
     pewFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     pewFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
-    -- UNIT_AURA catches the Augmentation Evoker "Future Self" buff falling off
-    -- at the end of Breath of Eons.  Blizzard hooks the same event internally
-    -- to re-anchor EssencePlayerFrame, which caused the post-landing reset.
-    pewFrame:RegisterEvent("UNIT_AURA")
+    -- Scoped to "player": Blizzard re-anchors EssencePlayerFrame on the
+    -- player's own UNIT_AURA (Future Self buff falling off), not on others'.
+    pewFrame:RegisterUnitEvent("UNIT_AURA", "player")
     pewFrame:SetScript("OnEvent", function(_, event, unit)
         if event == "UNIT_EXITED_VEHICLE" and unit ~= "player" then return end
-        if event == "UNIT_AURA"           and unit ~= "player" then return end
+        -- UNIT_AURA is already scoped to "player" via RegisterUnitEvent.
         DeferredApply()
     end)
 
