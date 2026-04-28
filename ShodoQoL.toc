@@ -22,3 +22,4 @@ Modules\SourceOfMagic.lua
 Modules\HoverTracker.lua
 Modules\PrescienceTracker.lua
 Modules\MouseCircle.lua
+Modules\Kicksmaxxing.lua
