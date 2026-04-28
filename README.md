@@ -1,7 +1,18 @@
 # ShodoQoL
-Quality-of-Life addons and modifications designed for Evokers 
+Quality-of-Life addons and modifications designed for Evokers
 
 <img width="770" height="642" alt="image" src="https://github.com/user-attachments/assets/4af23eac-a820-490b-a8e0-605e1c275346" />
+
+***
+
+# Usage:
+```
+/shodoqol          - Open Settings Menu
+/shodoqol status   - Show all Active/Inactive Modules available. 
+/shodoqol help     - Prints all available commands
+/sqol              - alias for all /shodoqol commands
+
+```
 
 # Modules For Evokers:
 
@@ -18,7 +29,7 @@ Evoker-only. Glows green, amber, or red behind your cast bar based on whether Ho
 ### Prescience Tracker
 **Key:** `PrescienceTracker`  
 **Description:**  
-Live Prescience buff state tracking "aura" on your P1 and P2 targets. Purely event-driven with zero CPU overhead. Augmentation Evoker only.              
+Live Prescience buff state tracking "aura" on your P1 and P2 targets. Purely event-driven with zero CPU overhead. Augmentation Evoker only.  
 Color-coded:
 - 🟢 active (`o`)
 - 🟠 expiring (`!`)
@@ -28,22 +39,26 @@ Color-coded:
 ### Macro Helpers
 **Key:** `MacroHelpers`  
 **Description:**  
-Per-character macros with cross-realm support: `Spatial Paradox`, `Prescience 1`, and `Prescience 2` — each targeting an independent player.
-
+Per-character macros with cross-realm support: `Spatial Paradox`, `Prescience 1`, and `Prescience 2` — each targeting an independent player. Also provides helpers for `Cauterizing Flame`, `Blistering Scales`, and `Source of Magic` targets so your macros stay stable across realm names and renames. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/8436809/20cff35b-b60d-4131-b37b-219f0950973e/paste.txt)
 
 ### Source of Magic
 **Key:** `SourceOfMagic`  
 **Description:**  
-Out-of-combat popup when Source of Magic is missing from your configured target. Only active when talented into Source of Magic. Use `/som test` to preview.
+Out-of-combat popup when Source of Magic is missing from your configured target. Only active when talented into Source of Magic. Uses token-scoped events (no global UNIT_AURA spam) so it stays lightweight even in large raids. Use `/som test` to preview. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/8436809/20cff35b-b60d-4131-b37b-219f0950973e/paste.txt)
 
----
+***
 
 # Modules for all classes:
 
 ### Mouse Circle (Mouse icon tracker)
-**Key:** `MouseCircle`
+**Key:** `MouseCircle`  
 **Description:**  
-Configure Size, Thickness, and Color of the circle around mouse. (uses a local circle.tga capped at refreshing every 30 frames.)
+Configure Size, Thickness, and Color of the circle around your mouse. Uses a local `circle.tga`, capped at refreshing every 30 frames.
+
+### Kicksmaxxing
+**Key:** `Kicksmaxxing`  
+**Description:**  
+Dynamic focus-macro generator for interrupts, stuns, and CC. Enter any spell name to get a `KM_SpellName` character macro that casts on your focus when it is alive and hostile, otherwise focuses-and-casts on the next enemy. Enable up to 5 spells at once from the settings panel. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/8436809/20cff35b-b60d-4131-b37b-219f0950973e/paste.txt)
 
 
 ### HearthStoned
@@ -53,19 +68,19 @@ Cycles through all owned hearthstone toys with a single per-character macro. Res
 
 ### C-Inspect
 **Key:** `CInspect`  
-**Addon Key:** `C-Inspect` - [Github](https://github.com/Jeremy-Gstein/C-Inspect) - [Curse](https://www.curseforge.com/wow/addons/c-inspect)
+**Addon Key:** `C-Inspect` - [Github](https://github.com/Jeremy-Gstein/C-Inspect) - [Curse](https://www.curseforge.com/wow/addons/c-inspect)  
 
 **Description:**  
 Hold `Ctrl` and `left-click` a friendly player to inspect them. Also registers `/rl` to reload your UI quickly.
 
 ### DoNotRelease
 **Key:** `DoNotRelease`  
-**Addon Key:** `DoNotRelease` - [Github](https://github.com/Seems-Good/DNRs) - [Curse](https://www.curseforge.com/wow/addons/do-not-release)
+**Addon Key:** `DoNotRelease` - [Github](https://github.com/Seems-Good/DNRs) - [Curse](https://www.curseforge.com/wow/addons/do-not-release)  
 
 **Description:**  
-Pulsing warning when you die in a group instance. Configurable text, color, font, and position. Use `/dnr test` to preview.
+Pulsing warning when you die in a group instance. Configurable text, color, font, and position. Use `/dnr test` to preview. Includes an optional 2FA-style overlay for release confirmation, with a low-cost timer that updates the “code refreshes in Xs” countdown once per second. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/8436809/20cff35b-b60d-4131-b37b-219f0950973e/paste.txt)
 
-### ShoStats [disabled after v1.7.1]  (Broken in WoW patch 12.0.5 with new combat api restrictions)
-~~**Key:** `ShoStats` 
+### ShoStats [disabled after v1.7.1]  (Broken in WoW patch 12.0.5 with new combat API restrictions)
+~~**Key:** `ShoStats`  
 **Description:**  
 Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, with draggable frame, opacity/scale sliders, and per-stat visibility toggles.~~
