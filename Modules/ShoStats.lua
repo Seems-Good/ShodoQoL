@@ -225,8 +225,9 @@ evtFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 evtFrame:RegisterEvent("COMBAT_RATING_UPDATE")
 evtFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 evtFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-evtFrame:RegisterEvent("UNIT_STATS")
-evtFrame:RegisterEvent("UNIT_AURA")
+-- Scoped to "player" so these don't fire for every raid member's buff changes.
+evtFrame:RegisterUnitEvent("UNIT_STATS", "player")
+evtFrame:RegisterUnitEvent("UNIT_AURA",  "player")
 
 evtFrame:SetScript("OnEvent", function(_, event, arg1)
     if not db() then return end   -- guard before OnReady
@@ -244,10 +245,8 @@ evtFrame:SetScript("OnEvent", function(_, event, arg1)
         rows["main"].cached = -1
     end
 
-    if (event == "UNIT_STATS" or event == "UNIT_AURA") and arg1 ~= "player" then
-        return
-    end
-
+    -- UNIT_STATS and UNIT_AURA are scoped to "player" via RegisterUnitEvent;
+    -- no arg1 guard needed.
     QueueUpdate()
 end)
 
