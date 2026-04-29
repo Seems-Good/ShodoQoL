@@ -8,13 +8,25 @@
 --   3. In a 5-man or raid group (not solo)
 --   4. Not in combat
 --   5. Macro target NOT set  OR  macro target is not in the current group
---      → healer-scan mode: enumerate healers + their SoM buff state
+--      → healer-scan mode: enumerate healers + their SoM buff state.
+--        In a 5-man, if exactly one healer is found they are promoted to
+--        an implicit tracked target for the session (not saved to DB).
+--        In a raid, all healers are shown with their buff state.
 --   5. Macro target IS set AND is in the current group
 --      → targeted mode: remind only when that specific player lacks the buff
 --
 -- Event architecture:
---   * UNIT_AURA registered on the exact macro-target token (targeted mode) or
---     on "group" virtual token (healer-scan mode, covers all 40 members).
+--   * UNIT_AURA registration strategy:
+--       Targeted mode → RegisterUnitEvent on the exact macro-target token.
+--       Scan mode     → RegisterUnitEvent on explicit party1..4 / raid1..40.
+--                       The "group" virtual token is NOT used (unreliable in
+--                       5-man instances). frame:UnregisterUnitEvent does NOT
+--                       accept a unit argument — to drop scan listeners we
+--                       call plain UnregisterEvent("UNIT_AURA"), which drops
+--                       all UNIT_AURA registrations on this frame, then
+--                       re-register only the tokens actually needed.
+--   * PLAYER_ENTERING_WORLD defers DoCheck() by 3 s to let the server
+--     push initial aura state before we evaluate buff presence.
 --   * UNIT_AURA and TRAIT_CONFIG_UPDATED gated out of combat entirely.
 --   * GROUP_ROSTER_UPDATE is debounced (one deferred call per burst).
 --   * No periodic tickers. No per-frame game-state reads.
@@ -24,7 +36,11 @@
 ------------------------------------------------------------------------
 local SOM_SPELL_ID   = 369459
 local SOM_SPELL_NAME = "Source of Magic"
-local EVOKER_CLASS   = "EVOKER"   -- checked via UnitClassBase
+local EVOKER_CLASS   = "EVOKER"
+
+-- How long to wait after PLAYER_ENTERING_WORLD before the first DoCheck.
+-- The server can take 1-2 s to push initial aura packets; 3 s is safe.
+local WORLD_ENTER_DELAY = 3
 
 local SOM_DEFAULTS = {
     posX        = 0,
@@ -60,42 +76,38 @@ local function DB() return ShodoQoLDB.sourceOfMagic end
 -- Runtime state
 ------------------------------------------------------------------------
 local State = {
-    isEvoker     = false,
-    hasSoMTalent = false,
-    inCombat     = false,
-    targetToken  = nil,    -- resolved group token for macro target; nil = not in group / not set
-    inGroup      = false,
+    isEvoker      = false,
+    hasSoMTalent  = false,
+    inCombat      = false,
+    targetToken   = nil,   -- resolved group token for the DB macro target
+    implicitToken = nil,   -- session-only auto-assigned 5-man healer token
+    inGroup       = false,
 }
 
+-- Returns whichever token is currently active: DB target first, then implicit.
+local function ActiveToken()
+    return State.targetToken or State.implicitToken
+end
+
 ------------------------------------------------------------------------
--- Class check — all three Evoker specs share this
+-- Class / talent / group helpers
 ------------------------------------------------------------------------
 local function UpdateClass()
     local _, classFile = UnitClass("player")
     State.isEvoker = (classFile == EVOKER_CLASS)
 end
 
-------------------------------------------------------------------------
--- Talent check
--- IsPlayerSpell is authoritative when called after SPELLS_CHANGED.
-------------------------------------------------------------------------
 local function UpdateTalent()
-    if not State.isEvoker then
-        State.hasSoMTalent = false
-        return
-    end
+    if not State.isEvoker then State.hasSoMTalent = false; return end
     State.hasSoMTalent = IsPlayerSpell(SOM_SPELL_ID)
 end
 
-------------------------------------------------------------------------
--- Group state
-------------------------------------------------------------------------
 local function UpdateGroupState()
     State.inGroup = GetNumGroupMembers() > 0
 end
 
 ------------------------------------------------------------------------
--- FindGroupToken — called only on roster/target change, never per-frame
+-- FindGroupToken
 ------------------------------------------------------------------------
 local function FindGroupToken(name, realm)
     if not name or name == "" then return nil end
@@ -132,6 +144,37 @@ local function ResolveTargetToken()
 end
 
 ------------------------------------------------------------------------
+-- Implicit 5-man healer auto-assignment
+-- When no DB macro target is set and we are in a 5-man (not a raid),
+-- find the single healer in the group and promote them to implicitToken
+-- for this session. This gives us a precise single-unit UNIT_AURA watch
+-- instead of polling all four party slots, and means we correctly detect
+-- their buff state through normal aura events rather than relying on the
+-- initial aura scan timing.
+------------------------------------------------------------------------
+local function UpdateImplicitToken()
+    -- Only useful in 5-man without a DB target
+    if State.targetToken or IsInRaid() or not State.inGroup then
+        State.implicitToken = nil
+        return
+    end
+
+    local healer = nil
+    for i = 1, 4 do
+        local token = "party" .. i
+        if UnitExists(token) and UnitGroupRolesAssigned(token) == "HEALER" then
+            if healer then
+                -- More than one healer found — can't pick one; fall back to scan
+                State.implicitToken = nil
+                return
+            end
+            healer = token
+        end
+    end
+    State.implicitToken = healer   -- nil if no healer found
+end
+
+------------------------------------------------------------------------
 -- Buff helpers
 ------------------------------------------------------------------------
 local function UnitHasSoM(token)
@@ -148,39 +191,20 @@ local function UnitHasSoM(token)
 end
 
 ------------------------------------------------------------------------
--- Healer enumeration for scan mode
--- Returns: healerList = { { token, name, hasSoM } ... }
+-- Healer enumeration — used only for raid scan mode
 ------------------------------------------------------------------------
-local function GetGroupHealers()
+local function GetRaidHealers()
     local list = {}
-    local prefix, count
-
-    if IsInRaid() then
-        prefix = "raid"
-        count  = GetNumGroupMembers()  -- up to 40
-    elseif IsInGroup() then
-        prefix = "party"
-        count  = 4                     -- party1..party4 (player excluded)
-    else
-        return list
-    end
-
+    local count = GetNumGroupMembers()
     for i = 1, count do
-        local token = prefix .. i
-        if UnitExists(token) then
-            local role = UnitGroupRolesAssigned(token)
-            if role == "HEALER" then
-                local name, realm = UnitName(token)
-                if name then
-                    local playerRealm = GetRealmName()
-                    local display = (realm and realm ~= "" and realm ~= playerRealm)
-                        and (name .. "-" .. realm) or name
-                    list[#list + 1] = {
-                        token   = token,
-                        name    = display,
-                        hasSoM  = UnitHasSoM(token),
-                    }
-                end
+        local token = "raid" .. i
+        if UnitExists(token) and UnitGroupRolesAssigned(token) == "HEALER" then
+            local name, realm = UnitName(token)
+            if name then
+                local playerRealm = GetRealmName()
+                local display = (realm and realm ~= "" and realm ~= playerRealm)
+                    and (name .. "-" .. realm) or name
+                list[#list + 1] = { token = token, name = display, hasSoM = UnitHasSoM(token) }
             end
         end
     end
@@ -198,7 +222,6 @@ warnFrame:SetFrameLevel(100)
 warnFrame:EnableMouse(false)
 warnFrame:Hide()
 
--- Primary label (title line)
 local label = warnFrame:CreateFontString(nil, "OVERLAY")
 label:SetPoint("TOP", warnFrame, "TOP", 0, 0)
 label:SetFont("Fonts\\FRIZQT__.TTF", 52, "OUTLINE")
@@ -206,7 +229,6 @@ label:SetTextColor(0.20, 0.75, 1.00, 1)
 label:SetShadowOffset(0, 0)
 label:SetText("SOURCE OF MAGIC MISSING")
 
--- Secondary label for healer-scan detail lines
 local detailLabel = warnFrame:CreateFontString(nil, "OVERLAY")
 detailLabel:SetPoint("TOP", label, "BOTTOM", 0, -8)
 detailLabel:SetWidth(780)
@@ -216,7 +238,7 @@ detailLabel:SetJustifyH("CENTER")
 detailLabel:SetText("")
 
 ------------------------------------------------------------------------
--- Pulse — pure alpha math; zero game-state reads per frame
+-- Pulse
 ------------------------------------------------------------------------
 local PULSE_PERIOD = 1.5
 local ALPHA_MIN    = 0.30
@@ -243,7 +265,7 @@ warnFrame:SetScript("OnHide", function(self)
 end)
 
 ------------------------------------------------------------------------
--- Apply DB settings to live frame
+-- Apply DB settings
 ------------------------------------------------------------------------
 local function ApplyAll()
     local db = DB()
@@ -292,10 +314,9 @@ local function DisableDrag()
 end
 
 ------------------------------------------------------------------------
--- Update the warning frame content and decide show/hide
+-- DoCheck
 ------------------------------------------------------------------------
 local function DoCheck()
-    -- Hard gates — must all be true to show anything
     if not State.isEvoker
     or not State.hasSoMTalent
     or State.inCombat
@@ -304,116 +325,119 @@ local function DoCheck()
         return
     end
 
-    -- ── TARGETED MODE ────────────────────────────────────────────────
-    -- A macro target is configured AND they are currently in the group.
-    if State.targetToken then
-        if not UnitExists(State.targetToken) then
-            -- Token became stale mid-check (extremely rare); re-resolve next event
+    -- ── SINGLE-TARGET MODE ───────────────────────────────────────────
+    -- Covers both DB macro target and implicit 5-man auto-assigned healer.
+    local active = ActiveToken()
+    if active then
+        if not UnitExists(active) then
             if warnFrame:IsShown() and not previewMode then HideSoMWarning() end
             return
         end
-
-        if UnitHasSoM(State.targetToken) then
+        if UnitHasSoM(active) then
             if warnFrame:IsShown() and not previewMode then HideSoMWarning() end
         else
-            local db = DB()
+            local displayName
+            if State.targetToken then
+                displayName = DB().targetName or "your target"
+            else
+                -- implicit token: use the unit's name directly
+                local n, r = UnitName(active)
+                local pr   = GetRealmName()
+                displayName = (r and r ~= "" and r ~= pr) and (n .. "-" .. r) or (n or "healer")
+            end
             label:SetText("SOURCE OF MAGIC MISSING")
-            detailLabel:SetText("|cffffd100" .. (db.targetName or "your target") .. "|r")
+            detailLabel:SetText("|cffffd100" .. displayName .. "|r")
             ShowSoMWarning()
         end
         return
     end
 
-    -- ── HEALER-SCAN MODE ─────────────────────────────────────────────
-    -- No macro target set (or target not in group): scan all healers.
-    local healers = GetGroupHealers()
-
+    -- ── RAID SCAN MODE ───────────────────────────────────────────────
+    -- Only reached when in a raid with no DB target set.
+    -- (5-man with no healer found also lands here but #healers == 0.)
+    local healers = GetRaidHealers()
     if #healers == 0 then
-        -- No healers in group (e.g. all DPS group) — nothing to remind about
         if warnFrame:IsShown() and not previewMode then HideSoMWarning() end
         return
     end
 
-    -- Check if any healer is missing SoM
     local anyMissing = false
     for _, h in ipairs(healers) do
         if not h.hasSoM then anyMissing = true; break end
     end
 
     if not anyMissing then
-        -- All healers have SoM — hide
         if warnFrame:IsShown() and not previewMode then HideSoMWarning() end
         return
     end
 
-    -- Build display text
-    if IsInRaid() then
-        -- Raid: show each healer and their status
-        label:SetText("SOURCE OF MAGIC")
-        local lines = {}
-        for _, h in ipairs(healers) do
-            if h.hasSoM then
-                lines[#lines + 1] = "|cff33937f✔|r " .. h.name
-            else
-                lines[#lines + 1] = "|cffff4444✘|r " .. h.name
-            end
-        end
-        lines[#lines + 1] = "|cff888888Set a macro target to track one healer|r"
-        detailLabel:SetText(table.concat(lines, "   "))
-    else
-        -- 5-man: exactly one healer slot; show name and suggest adding to macro
-        local healer = healers[1]   -- first (and typically only) healer
-        label:SetText("SOURCE OF MAGIC MISSING")
-        detailLabel:SetText(
-            "|cffffd100" .. healer.name .. "|r"
-            .. "   |cff888888(set as macro target to track)|r"
-        )
+    label:SetText("SOURCE OF MAGIC")
+    local lines = {}
+    for _, h in ipairs(healers) do
+        lines[#lines + 1] = (h.hasSoM and "|cff33937f✔|r " or "|cffff4444✘|r ") .. h.name
     end
-
+    lines[#lines + 1] = "|cff888888Set a macro target to track one healer|r"
+    detailLabel:SetText(table.concat(lines, "   "))
     ShowSoMWarning()
 end
 
 ------------------------------------------------------------------------
 -- Dynamic event gating
--- UNIT_AURA registration strategy:
---   Targeted mode  → RegisterUnitEvent on the exact token (cheapest)
---   Scan mode      → RegisterUnitEvent on "group" virtual token (covers all members)
---   Neither        → no UNIT_AURA registered
+--
+-- KEY CONSTRAINT: frame:UnregisterUnitEvent does not exist in the WoW
+-- API — only frame:UnregisterEvent(eventName) does, taking no unit arg.
+-- To change what is registered for UNIT_AURA we call UnregisterEvent to
+-- wipe all UNIT_AURA registrations on this frame, then re-register only
+-- the tokens we actually need.
+--
+-- auraMode:
+--   nil        → nothing registered
+--   "targeted" → RegisterUnitEvent on ActiveToken() only
+--   "scan"     → RegisterUnitEvent on raid1..40 (raid-only fallback)
 ------------------------------------------------------------------------
-local evtFrame              -- assigned in OnReady
-local auraMode   = nil      -- "targeted" | "scan" | nil
+local evtFrame
+local auraMode = nil
+
+local function UnregisterAllUnitAura()
+    if evtFrame then evtFrame:UnregisterEvent("UNIT_AURA") end
+end
+
+local function RegisterScanTokens()
+    -- Scan is only used for raids (5-man always has implicitToken or no healer)
+    if not evtFrame then return end
+    local count = GetNumGroupMembers()
+    for i = 1, count do
+        evtFrame:RegisterUnitEvent("UNIT_AURA", "raid" .. i)
+    end
+end
 
 local function SetWatchedEvents()
     if not evtFrame then return end
 
     local wantMode = nil
     if State.isEvoker and State.hasSoMTalent and not State.inCombat and State.inGroup then
-        wantMode = State.targetToken and "targeted" or "scan"
+        local active = ActiveToken()
+        if active then
+            wantMode = "targeted"
+        elseif IsInRaid() then
+            wantMode = "scan"
+        end
+        -- 5-man with no healer found: wantMode stays nil (nothing to watch)
     end
 
-    -- Unregister old UNIT_AURA if mode changed
-    -- "group" is a virtual token: RegisterUnitEvent accepts it but
-    -- UnregisterUnitEvent does not — must use plain UnregisterEvent.
     if auraMode ~= wantMode then
-        if auraMode == "targeted" and State.targetToken then
-            evtFrame:UnregisterUnitEvent("UNIT_AURA", State.targetToken)
-        elseif auraMode == "scan" then
-            evtFrame:UnregisterEvent("UNIT_AURA")
-        end
+        UnregisterAllUnitAura()
         auraMode = nil
-    end
 
-    -- Register new UNIT_AURA
-    if wantMode and not auraMode then
         if wantMode == "targeted" then
-            evtFrame:RegisterUnitEvent("UNIT_AURA", State.targetToken)
+            evtFrame:RegisterUnitEvent("UNIT_AURA", ActiveToken())
+            auraMode = "targeted"
         elseif wantMode == "scan" then
-            evtFrame:RegisterUnitEvent("UNIT_AURA", "group")
+            RegisterScanTokens()
+            auraMode = "scan"
         end
-        auraMode = wantMode
     end
 
-    -- TRAIT_CONFIG_UPDATED / SPELLS_CHANGED only needed when Evoker
     if State.isEvoker then
         evtFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
         evtFrame:RegisterEvent("SPELLS_CHANGED")
@@ -423,34 +447,37 @@ local function SetWatchedEvents()
     end
 end
 
--- Public hook: called by MacroHelpers and the settings panel when SoM target changes
+-- Public hook: called by MacroHelpers and the settings panel.
 function ShodoQoL.NotifySoMTargetChanged()
-    -- Re-resolve token; unregister old aura event before token pointer changes
-    if auraMode == "targeted" and State.targetToken then
-        if evtFrame then evtFrame:UnregisterUnitEvent("UNIT_AURA", State.targetToken) end
-        auraMode = nil
-    end
+    UnregisterAllUnitAura()
+    auraMode = nil
     ResolveTargetToken()
+    UpdateImplicitToken()
+    SetWatchedEvents()
+    DoCheck()
+end
+
+------------------------------------------------------------------------
+-- Full state refresh — shared by PLAYER_ENTERING_WORLD bootstrap and
+-- GROUP_ROSTER_UPDATE handler.
+------------------------------------------------------------------------
+local function FullRefresh()
+    UpdateGroupState()
+    ResolveTargetToken()
+    UpdateImplicitToken()
     SetWatchedEvents()
     DoCheck()
 end
 
 ------------------------------------------------------------------------
 -- GROUP_ROSTER_UPDATE debounce
--- Burst-collapses multiple rapid roster events into a single deferred call.
 ------------------------------------------------------------------------
 local rosterPending = false
 local function OnRosterUpdate()
     rosterPending = false
-    -- Token may have shifted (slot renumbering); unregister old aura before re-resolving
-    if auraMode == "targeted" and State.targetToken then
-        if evtFrame then evtFrame:UnregisterUnitEvent("UNIT_AURA", State.targetToken) end
-        auraMode = nil
-    end
-    UpdateGroupState()
-    ResolveTargetToken()
-    SetWatchedEvents()
-    DoCheck()
+    UnregisterAllUnitAura()
+    auraMode = nil
+    FullRefresh()
 end
 
 local function ScheduleRosterUpdate()
@@ -526,7 +553,6 @@ local function BuildPanel()
         return fs
     end
 
-    -- ── Target section ───────────────────────────────────────────────
     local div0   = Div(subFS, -12)
     local tgtHdr = SecLabel(div0, -14, "Target")
 
@@ -625,7 +651,6 @@ local function BuildPanel()
         print("|cff33937fShodoQoL|r SoM: Target cleared.")
     end)
 
-    -- ── Position section ─────────────────────────────────────────────
     local div1   = Div(applyBtn, -18)
     local posHdr = SecLabel(div1, -14, "Position")
 
@@ -633,7 +658,6 @@ local function BuildPanel()
     showBtn:SetPoint("TOPLEFT", posHdr, "BOTTOMLEFT", 0, -8)
     showBtn:SetScript("OnClick", function()
         previewMode = true
-        -- Populate with realistic preview content
         label:SetText("SOURCE OF MAGIC MISSING")
         detailLabel:SetText("|cffffd100Preview|r   |cff888888(no live data)|r")
         warnFrame:Show()
@@ -662,7 +686,6 @@ local function BuildPanel()
         ApplyAll()
     end)
 
-    -- ── Color section ────────────────────────────────────────────────
     local div2     = Div(dragBtn, -14)
     local colorHdr = SecLabel(div2, -14, "Warning Color")
     local colorAnchor = colorHdr
@@ -682,7 +705,6 @@ local function BuildPanel()
         end)
     end
 
-    -- ── Font Size slider ─────────────────────────────────────────────
     local div4    = Div(colorAnchor, -14)
     local sizeHdr = SecLabel(div4, -14, "Font Size")
 
@@ -765,10 +787,12 @@ SlashCmdList["SHODO_SOM"] = function(msg)
         HideSoMWarning()
     elseif cmd == "check" then
         print(string.format(
-            "|cff33937fShodoQoL|r SoM: evoker=%s  talented=%s  inGroup=%s  inCombat=%s  token=%s  auraMode=%s",
+            "|cff33937fShodoQoL|r SoM: evoker=%s  talented=%s  inGroup=%s  inCombat=%s"
+            .. "  token=%s  implicit=%s  auraMode=%s",
             tostring(State.isEvoker), tostring(State.hasSoMTalent),
             tostring(State.inGroup), tostring(State.inCombat),
-            tostring(State.targetToken), tostring(auraMode)))
+            tostring(State.targetToken), tostring(State.implicitToken),
+            tostring(auraMode)))
     else
         print("|cff33937fShodoQoL|r SoM: |cffffd100/som test|r  |  |cffffd100/som hide|r  |  |cffffd100/som check|r")
     end
@@ -791,57 +815,65 @@ ShodoQoL.OnReady(function()
     evtFrame = CreateFrame("Frame")
     evtFrame:EnableMouse(false)
 
-    -- Always-on events (low frequency)
     evtFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     evtFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     evtFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     evtFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     evtFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-    -- UNIT_AURA, TRAIT_CONFIG_UPDATED, SPELLS_CHANGED: dynamically gated
 
     evtFrame:SetScript("OnEvent", function(_, event, arg1)
 
         if event == "PLAYER_ENTERING_WORLD" then
             State.inCombat = UnitAffectingCombat("player") and true or false
             UpdateClass(); UpdateTalent(); UpdateGroupState()
-            ResolveTargetToken(); SetWatchedEvents(); DoCheck()
+            ResolveTargetToken(); UpdateImplicitToken()
+            SetWatchedEvents()
+            -- Defer the first DoCheck so the server has time to push initial
+            -- aura state. Without this, buff queries return false positives
+            -- when joining a group where SoM is already active.
+            C_Timer.After(WORLD_ENTER_DELAY, function()
+                -- Re-resolve implicit token in case the roster settled
+                -- differently than it appeared at PLAYER_ENTERING_WORLD.
+                UnregisterAllUnitAura()
+                auraMode = nil
+                UpdateImplicitToken()
+                SetWatchedEvents()
+                DoCheck()
+            end)
 
         elseif event == "PLAYER_REGEN_DISABLED" then
             State.inCombat = true
-            SetWatchedEvents()   -- unregisters UNIT_AURA
+            SetWatchedEvents()
             if not previewMode then HideSoMWarning() end
 
         elseif event == "PLAYER_REGEN_ENABLED" then
             State.inCombat = false
-            SetWatchedEvents()   -- re-registers UNIT_AURA if appropriate
+            SetWatchedEvents()
             DoCheck()
 
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-            -- Class doesn't change on spec change; talent availability can
             UpdateTalent(); SetWatchedEvents(); DoCheck()
 
         elseif event == "TRAIT_CONFIG_UPDATED" then
-            -- Filter to active class talent config; ignore profession commits
             local activeID = C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID()
             if activeID and arg1 ~= activeID then return end
             UpdateTalent(); SetWatchedEvents(); DoCheck()
 
         elseif event == "SPELLS_CHANGED" then
-            -- Fires after talent commits are finalised; most reliable talent check trigger
             UpdateTalent(); SetWatchedEvents(); DoCheck()
 
         elseif event == "GROUP_ROSTER_UPDATE" then
-            ScheduleRosterUpdate()   -- debounced
+            ScheduleRosterUpdate()
 
         elseif event == "UNIT_AURA" then
-            -- Targeted mode: arg1 == State.targetToken (guaranteed by RegisterUnitEvent scope)
-            -- Scan mode:     arg1 == any group member token; we recheck all healers
             DoCheck()
         end
     end)
 
-    -- Initial state bootstrap (DB is ready, we're post-PLAYER_LOGIN)
+    -- Initial bootstrap (post-PLAYER_LOGIN, DB ready).
+    -- PLAYER_ENTERING_WORLD will fire shortly and do the deferred DoCheck.
     State.inCombat = UnitAffectingCombat("player") and true or false
     UpdateClass(); UpdateTalent(); UpdateGroupState()
-    ResolveTargetToken(); SetWatchedEvents(); DoCheck()
+    ResolveTargetToken(); UpdateImplicitToken()
+    SetWatchedEvents()
 end)
