@@ -1,7 +1,11 @@
 -- ShodoQoL/Kicksmaxxing.lua
 -- Dynamic focus-macro manager for interrupts, stuns, and targeted CC.
--- Reads / writes: ShodoQoLDB.kicksmaxxing.spells[]
---   each entry: { name = string, enabled = bool }
+--
+-- DB layout (account-wide SavedVariables):
+--   ShodoQoLDB.kicksmaxxing.spells[]          -- shared list: { name = string }
+--   ShodoQoLDB.kicksmaxxing.profiles[charKey] -- per-char:    { [spellName] = true/false }
+--
+-- charKey = "CharName-RealmName"
 --
 -- Generated macro template (per spell):
 --   #showtooltip <Spell>
@@ -17,7 +21,7 @@
 --
 -- Macro naming: KM_<CamelCasedSpellName>  (max 16 chars total)
 -- All macros stored in the character-specific macro tab (not General).
--- Maximum MAX_ACTIVE spells may be enabled simultaneously.
+-- Maximum MAX_ACTIVE spells may be enabled simultaneously (per character).
 
 local MAX_ACTIVE   = 5
 local MACRO_PREFIX = "KM_"
@@ -28,8 +32,36 @@ local ROW_H        = 32    -- height of each spell row in the list
 local COL_CB     = 2    -- checkbox
 local COL_NAME   = 30   -- spell name label
 local COL_MNAME  = 212  -- macro name label (KM_xxx)
-local COL_STATUS = 326  --  / – exists label
-local COL_DEL    = 400  -- delete button
+local COL_STATUS = 316  -- yes / no exists label
+local COL_PICKUP = 370  -- pick up macro button
+local COL_DEL    = 448  -- delete button
+
+------------------------------------------------------------------------
+-- Character key helper
+------------------------------------------------------------------------
+local function CharKey()
+    return (UnitName("player") or "Unknown") .. "-" .. (GetRealmName() or "Unknown")
+end
+
+-- Returns (and lazily creates) the profile table for the current character.
+local function GetProfile()
+    local db = ShodoQoLDB and ShodoQoLDB.kicksmaxxing
+    if not db then return {} end
+    if not db.profiles then db.profiles = {} end
+    local key = CharKey()
+    if not db.profiles[key] then db.profiles[key] = {} end
+    return db.profiles[key]
+end
+
+-- Is a spell enabled for the current character?
+local function IsEnabled(spellName)
+    return GetProfile()[spellName] == true
+end
+
+-- Set enabled state for the current character.
+local function SetEnabled(spellName, state)
+    GetProfile()[spellName] = state or nil   -- nil cleans up false entries
+end
 
 ------------------------------------------------------------------------
 -- Local EditBox factory  (matches MacroHelpers style)
@@ -138,10 +170,12 @@ local function DisableMacro(spellName)
 end
 
 local function CountActive()
-    if type(ShodoQoLDB) ~= "table" or not ShodoQoLDB.kicksmaxxing then return 0 end
+    local db = ShodoQoLDB and ShodoQoLDB.kicksmaxxing
+    if not db then return 0 end
+    local profile = GetProfile()
     local n = 0
-    for _, e in ipairs(ShodoQoLDB.kicksmaxxing.spells) do
-        if e.enabled then n = n + 1 end
+    for _, e in ipairs(db.spells) do
+        if profile[e.name] then n = n + 1 end
     end
     return n
 end
@@ -176,9 +210,16 @@ local subFS = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 subFS:SetPoint("TOPLEFT", titleFS, "BOTTOMLEFT", 0, -5)
 subFS:SetText("|cff888888Focus-macro generator — interrupts, stuns, and targeted CC|r")
 
+-- Character indicator (shows which profile is active)
+local charFS = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+charFS:SetPoint("TOPRIGHT", content, "TOPRIGHT", -24, -14)
+charFS:SetJustifyH("RIGHT")
+charFS:SetText("")   -- filled in after PLAYER_LOGIN
+
 local topDiv = content:CreateTexture(nil, "ARTWORK")
-topDiv:SetPoint("TOPLEFT", subFS, "BOTTOMLEFT", 0, -10)
-topDiv:SetSize(560, 1)
+topDiv:SetPoint("TOPLEFT",  subFS, "BOTTOMLEFT",  0, -10)
+topDiv:SetPoint("TOPRIGHT", content, "TOPRIGHT", -20, 0)
+topDiv:SetHeight(1)
 topDiv:SetColorTexture(0.20, 0.58, 0.50, 0.6)
 
 -------- Info box -------------------------------------------------------
@@ -208,15 +249,16 @@ infoBodyFS:SetText(
     "|cffffff00Focus exists & hostile?|r Cast directly on your focus target.\n"
  .. "|cffffff00No valid focus?|r Execute the following:\n1.  your current target as focus\n2.  drops target\n"
  .. "3.  /targetenemy\n4.  casts the spell\n5.  retargets focus\n6.  clears focus\n7.  starts auto-attack.\n\n"
- .. "|cff52c4afIdeal for:|r Interrupts (Quell, Kick, Mind Freeze, Spear Hand Strike, Solar Beam)"
+ .. "|cff52c4afIdeal for:|r Interrupts (Quell, Kick, Mind Freeze, Spear Hand Strike, Solar Beam) "
  .. "Stuns / CC (Cheap Shot, Kidney Shot, Hammer of Justice, Leg Sweep, Sigil of Silence).\n\n"
  .. "|cff52c4afMacro naming:|r Spell --> |cffffd100KM_SpellName|r "
  .. "(e.g. Quell --> |cffffd100KM_Quell|r, Cheap Shot --> |cffffd100KM_CheapShot|r). Enable up to |cffffd100" .. MAX_ACTIVE .. "|r at once with the checkboxes below."
 )
 
 local infoDiv = content:CreateTexture(nil, "ARTWORK")
-infoDiv:SetPoint("TOPLEFT", infoBG, "BOTTOMLEFT", 0, -12)
-infoDiv:SetSize(560, 1)
+infoDiv:SetPoint("TOPLEFT",  infoBG, "BOTTOMLEFT",  0, -12)
+infoDiv:SetPoint("TOPRIGHT", infoBG, "BOTTOMRIGHT",  0, -12)
+infoDiv:SetHeight(1)
 infoDiv:SetColorTexture(0.20, 0.58, 0.50, 0.6)
 
 -------- Add Spell row --------------------------------------------------
@@ -232,7 +274,9 @@ local addBtn = ShodoQoL.CreateButton(content, "Add Spell", 90, 22)
 addBtn:SetPoint("LEFT", spellEB, "RIGHT", 6, 0)
 
 local addFeedFS = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-addFeedFS:SetPoint("LEFT", addBtn, "RIGHT", 10, 0)
+addFeedFS:SetPoint("TOPLEFT", addHdrFS, "BOTTOMLEFT", 0, -10)
+addFeedFS:SetWidth(460)
+addFeedFS:SetJustifyH("LEFT")
 addFeedFS:SetText("")
 
 local function SetFeedback(text, isError)
@@ -244,7 +288,7 @@ end
 
 -------- Status line ----------------------------------------------------
 local statusFS = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-statusFS:SetPoint("TOPLEFT", addHdrFS, "BOTTOMLEFT", 0, -10)
+statusFS:SetPoint("TOPLEFT", addFeedFS, "BOTTOMLEFT", 0, -8)
 
 local function UpdateStatus()
     local db = ShodoQoLDB and ShodoQoLDB.kicksmaxxing
@@ -258,7 +302,7 @@ local function UpdateStatus()
     local col = (active >= MAX_ACTIVE) and "|cffffff00" or "|cff52c4af"
     statusFS:SetText(string.format(
         col .. "Active: %d / %d|r  |cff666666·|r  "
-     .. "|cff888888%d spell%s configured  (check up to %d)|r",
+     .. "|cff888888%d spell%s configured  (check up to %d per character)|r",
         active, MAX_ACTIVE, total, total == 1 and "" or "s", MAX_ACTIVE))
 end
 
@@ -279,6 +323,7 @@ MakeHdrLabel("On",         COL_CB)
 MakeHdrLabel("Spell Name", COL_NAME)
 MakeHdrLabel("Macro Name", COL_MNAME)
 MakeHdrLabel("Created",    COL_STATUS)
+MakeHdrLabel("Get Macro (Move to ActionBar)",        COL_PICKUP)
 
 local hdrDiv = content:CreateTexture(nil, "ARTWORK")
 hdrDiv:SetPoint("TOPLEFT",  listHdrFrame, "BOTTOMLEFT",  0, -2)
@@ -328,7 +373,7 @@ local function CreatePoolRow(poolIdx)
     -- Exists badge
     local statFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     statFS:SetPoint("LEFT", row, "LEFT", COL_STATUS, 0)
-    statFS:SetWidth(70)
+    statFS:SetWidth(50)
     statFS:SetJustifyH("LEFT")
     row.statFS = statFS
 
@@ -343,6 +388,13 @@ local function CreatePoolRow(poolIdx)
     end
     row.delBtn = delBtn
 
+
+    -- Pick Up button — puts the macro on the cursor to drag onto an action bar.
+    -- Only enabled when the macro actually exists on this character.
+    local pickupBtn = ShodoQoL.CreateButton(row, "Get Macro", 68, 20)
+    pickupBtn:SetPoint("LEFT", row, "LEFT", COL_PICKUP, 0)
+    row.pickupBtn = pickupBtn
+
     row:Hide()
     return row
 end
@@ -354,13 +406,12 @@ bottomDiv:SetColorTexture(0.20, 0.58, 0.50, 0.6)
 
 -------- RebuildList ----------------------------------------------------
 RebuildList = function()
-    if type(ShodoQoLDB) ~= "table" or not ShodoQoLDB.kicksmaxxing then return end
-    local spells = ShodoQoLDB.kicksmaxxing.spells
+    local db = ShodoQoLDB and ShodoQoLDB.kicksmaxxing
+    if not db then return end
+    local spells  = db.spells
 
     -- Hide all pooled rows first
     for _, row in ipairs(rowPool) do row:Hide() end
-
-    local activeCount = CountActive()
 
     for i, entry in ipairs(spells) do
         if not rowPool[i] then rowPool[i] = CreatePoolRow(i) end
@@ -372,55 +423,74 @@ RebuildList = function()
         row:SetPoint("TOPRIGHT", content, "TOPRIGHT",  -20, 0)
         row:Show()
 
-        -- ── Checkbox ────────────────────────────────────────────────
-        row.cb:SetChecked(entry.enabled)
+        local enabled = IsEnabled(entry.name)
 
-        -- Capture entry by reference (it IS the actual DB table entry)
-        local capturedEntry = entry
-        local capturedI     = i
+        -- ── Checkbox ────────────────────────────────────────────────
+        row.cb:SetChecked(enabled)
+
+        local capturedName = entry.name
+        local capturedI    = i
 
         row.cb:SetScript("OnClick", function(self)
             local wantEnabled = self:GetChecked()
             if wantEnabled then
                 if CountActive() >= MAX_ACTIVE then
                     self:SetChecked(false)
-                    SetFeedback("Max " .. MAX_ACTIVE .. " active at once!", true)
+                    SetFeedback("Max " .. MAX_ACTIVE .. " active for this character!", true)
                     return
                 end
-                capturedEntry.enabled = true
-                if not EnableMacro(capturedEntry.name) then
-                    -- Char tab was full — roll back
-                    capturedEntry.enabled = false
+                SetEnabled(capturedName, true)
+                if not EnableMacro(capturedName) then
+                    -- Char tab full — roll back
+                    SetEnabled(capturedName, nil)
                     self:SetChecked(false)
                 end
             else
-                capturedEntry.enabled = false
-                DisableMacro(capturedEntry.name)
+                SetEnabled(capturedName, nil)
+                DisableMacro(capturedName)
             end
             RebuildList()
         end)
 
         -- ── Spell name label ─────────────────────────────────────────
-        row.nameFS:SetText(entry.enabled
+        row.nameFS:SetText(enabled
             and ("|cffffd100" .. entry.name .. "|r")
             or  ("|cff888888" .. entry.name .. "|r"))
 
         -- ── Macro name ───────────────────────────────────────────────
         row.mNameFS:SetText("|cff52c4af" .. MName(entry.name) .. "|r")
 
-        -- ── Exists badge ─────────────────────────────────────────────
-        row.statFS:SetText(MacroExistsChar(entry.name)
+        -- ── Exists badge + Pick Up ───────────────────────────────────
+        local macroExists = MacroExistsChar(entry.name)
+        row.statFS:SetText(macroExists
             and "|cff33cc55yes|r"
             or  "|cff555555no|r")
 
+        -- ── Pick Up button ────────────────────────────────────────────
+        row.pickupBtn:SetEnabled(macroExists)
+        row.pickupBtn:SetAlpha(macroExists and 1.0 or 0.35)
+        row.pickupBtn:SetScript("OnClick", function()
+            PickupMacro(MName(capturedName))
+        end)
+
         -- ── Delete ───────────────────────────────────────────────────
+        --  Removes the spell from the shared list and cleans up every
+        --  character profile that had it enabled (their macros are gone
+        --  already because we only delete the current char's macro here;
+        --  other characters will sync on their next login via OnReady).
         row.delBtn:SetScript("OnClick", function()
-            DisableMacro(capturedEntry.name)
-            table.remove(ShodoQoLDB.kicksmaxxing.spells, capturedI)
+            DisableMacro(capturedName)
+            -- Scrub the spell from every character profile
+            if db.profiles then
+                for _, profile in pairs(db.profiles) do
+                    profile[capturedName] = nil
+                end
+            end
+            table.remove(db.spells, capturedI)
             print(string.format(
                 "|cff33937fShodoQoL Kicksmaxxing|r: Removed |cffffd100%s|r "
-             .. "(macro |cffffd100%s|r deleted).",
-                capturedEntry.name, MName(capturedEntry.name)))
+             .. "(macro |cffffd100%s|r deleted, all character profiles updated).",
+                capturedName, MName(capturedName)))
             RebuildList()
         end)
     end
@@ -428,13 +498,9 @@ RebuildList = function()
     -- ── Move bottom divider below last row ───────────────────────────
     bottomDiv:ClearAllPoints()
     local divOffY = -(math.max(0, #spells) * ROW_H) - 12
-    bottomDiv:SetPoint("TOPLEFT",  hdrDiv, "BOTTOMLEFT",  0, divOffY)
+    bottomDiv:SetPoint("TOPLEFT", hdrDiv, "BOTTOMLEFT", 0, divOffY)
 
     -- ── Grow content to fit ──────────────────────────────────────────
-    -- Approximate static offset from content top to hdrDiv bottom:
-    --   title(20) + gap(13) + sub(14) + 10 + topDiv(1) + 10 +
-    --   infoBG(178) + 12 + infoDiv(1) + 14 + addRow(22) + 10 +
-    --   status(14) + 8 + listHdr(18) + hdrDiv(1) + gap(2)  ≈ 348
     local STATIC_H = 355
     content:SetHeight(STATIC_H + (#spells * ROW_H) + 60)
 
@@ -443,7 +509,8 @@ end
 
 -------- Add button logic -----------------------------------------------
 local function TryAddSpell()
-    if type(ShodoQoLDB) ~= "table" or not ShodoQoLDB.kicksmaxxing then return end
+    local db = ShodoQoLDB and ShodoQoLDB.kicksmaxxing
+    if not db then return end
 
     local raw = spellEB:GetText():match("^%s*(.-)%s*$")
     if not raw or raw == "" then
@@ -459,17 +526,17 @@ local function TryAddSpell()
     local spellName = table.concat(parts, " ")
 
     -- Duplicate guard
-    local spells = ShodoQoLDB.kicksmaxxing.spells
-    for _, e in ipairs(spells) do
+    for _, e in ipairs(db.spells) do
         if e.name:lower() == spellName:lower() then
             SetFeedback(spellName .. " is already in the list.", true)
             return
         end
     end
 
-    table.insert(spells, { name = spellName, enabled = false })
+    -- Spell is added to the shared list only (no enabled flag here).
+    table.insert(db.spells, { name = spellName })
     spellEB:SetText("")
-    SetFeedback("Added: " .. spellName .. " (check the box to activate)")
+    SetFeedback("Added: " .. spellName .. " (check the box to activate for this character)")
     RebuildList()
 end
 
@@ -491,19 +558,43 @@ Settings.RegisterAddOnCategory(subCat)
 ShodoQoL.OnReady(function()
     if not ShodoQoL.IsEnabled("Kicksmaxxing") then return end
 
-    local spells = ShodoQoLDB.kicksmaxxing.spells
+    local db = ShodoQoLDB.kicksmaxxing
+
+    -- ── Migrate legacy data ──────────────────────────────────────────
+    -- Old format stored { name, enabled } on each spell entry.
+    -- Convert to the new shared-list + profiles layout transparently.
+    if db.spells and #db.spells > 0 and db.spells[1].enabled ~= nil then
+        local key     = CharKey()
+        db.profiles   = db.profiles or {}
+        db.profiles[key] = db.profiles[key] or {}
+        for _, e in ipairs(db.spells) do
+            if e.enabled then
+                db.profiles[key][e.name] = true
+            end
+            e.enabled = nil   -- remove old field
+        end
+        print("|cff33937fShodoQoL Kicksmaxxing|r: Migrated spell list to per-character profiles.")
+    end
+
+    -- Ensure profiles table exists
+    db.profiles = db.profiles or {}
+
+    -- Update the character label in the UI
+    charFS:SetText("|cff666666Profile: |r|cff52c4af" .. CharKey() .. "|r")
+
+    local profile = GetProfile()
 
     -- Purge any General-tab accidents
-    for _, e in ipairs(spells) do
+    for _, e in ipairs(db.spells) do
         PurgeGlobal(MName(e.name))
     end
 
-    -- Sync: create enabled macros, ensure disabled/removed ones don't exist
-    for _, e in ipairs(spells) do
-        if e.enabled then
+    -- Sync macros for this character: create enabled ones, delete disabled/absent ones.
+    for _, e in ipairs(db.spells) do
+        if profile[e.name] then
             if not EnableMacro(e.name) then
                 -- Char tab full — mark as disabled so state is honest
-                e.enabled = false
+                profile[e.name] = nil
             end
         else
             DisableMacro(e.name)
