@@ -1,10 +1,12 @@
 -- ShodoQoL/Core.lua
 -- Shared init: SavedVariables, one-shot bootstrap, Settings category.
+-- Adds a systemd-style debug/journal framework.
+-- All existing module APIs (IsEnabled, OnReady, CreateButton, rootCategory) are unchanged.
 
 ShodoQoL = ShodoQoL or {}
 
-ShodoQoL.COLOR = { r = 0.200, g = 0.576, b = 0.498 }
-ShodoQoL.COLOR_HEX = "|cff33937f"
+ShodoQoL.COLOR      = { r = 0.200, g = 0.576, b = 0.498 }
+ShodoQoL.COLOR_HEX  = "|cff33937f"
 ShodoQoL.COLOR_LITE = "|cff52c4af"
 
 ------------------------------------------------------------------------
@@ -17,23 +19,23 @@ ShodoQoL.DEFAULTS = {
         scale = 1.5,
     },
     spatialParadox = {
-        targetName = nil,
+        targetName  = nil,
         targetRealm = nil,
     },
     prescience1 = {
-        targetName = nil,
+        targetName  = nil,
         targetRealm = nil,
     },
     prescience2 = {
-        targetName = nil,
+        targetName  = nil,
         targetRealm = nil,
     },
     cauterizingFlame = {
-        targetName = nil,
+        targetName  = nil,
         targetRealm = nil,
     },
     blisteringScales = {
-        targetName = nil,
+        targetName  = nil,
         targetRealm = nil,
     },
     hearthStoned = {
@@ -41,14 +43,14 @@ ShodoQoL.DEFAULTS = {
         index = 1,
     },
     doNotRelease = {
-        posX = 0,
-        posY = 120,
-        colorR = 1,
-        colorG = 0.1,
-        colorB = 0.1,
+        posX        = 0,
+        posY        = 120,
+        colorR      = 1,
+        colorG      = 0.1,
+        colorB      = 0.1,
         warningText = "PLEASE DO NOT RELEASE",
-        fontSize = 64,
-        fontFace = "Fonts\\FRIZQT__.TTF",
+        fontSize    = 64,
+        fontFace    = "Fonts\\FRIZQT__.TTF",
     },
     sourceOfMagic = {
         posX        = 0,
@@ -98,6 +100,9 @@ ShodoQoL.DEFAULTS = {
         thickness = 2,
         radius    = 16,
     },
+    -- Set true after one-time class check. BackFill gives this to existing installs.
+    _classCheckDone = false,
+
     -- Per-module enabled flags. false = disabled (requires reload to take effect).
     enabled = {
         EssenceMover      = true,
@@ -138,7 +143,7 @@ function ShodoQoL.IsEnabled(key)
     if type(ShodoQoLDB) == "table" then
         return ShodoQoLDB.enabled[key] ~= false
     end
-    -- DB not ready yet — consult compile-time defaults
+    -- DB not ready yet - consult compile-time defaults
     return ShodoQoL.DEFAULTS.enabled[key] ~= false
 end
 
@@ -146,7 +151,7 @@ end
 -- Shared clean button
 ------------------------------------------------------------------------
 function ShodoQoL.CreateButton(parent, label, width, height)
-    width = width or 110
+    width  = width  or 110
     height = height or 24
 
     local btn = CreateFrame("Button", nil, parent)
@@ -172,7 +177,7 @@ function ShodoQoL.CreateButton(parent, label, width, height)
     border:SetBackdrop({
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         edgeSize = 10,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
+        insets   = { left = 2, right = 2, top = 2, bottom = 2 },
     })
     border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.70)
     border:EnableMouse(false)
@@ -196,16 +201,219 @@ function ShodoQoL.CreateButton(parent, label, width, height)
         fs:SetTextColor(0.90, 0.95, 0.92)
     end)
     btn:SetScript("OnMouseDown", function() bgPush:Show() end)
-    btn:SetScript("OnMouseUp", function() bgPush:Hide() end)
+    btn:SetScript("OnMouseUp",   function() bgPush:Hide()  end)
 
     return btn
 end
 
 ------------------------------------------------------------------------
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  Debug / Journal framework (systemd-style)           ║
+-- ╚══════════════════════════════════════════════════════╝
+--
+-- Usage from any module:
+--   local log = ShodoQoL.Debug.GetLogger("MyModule")
+--   log:Info("Something happened")
+--   log:Warn("Watch out")
+--   log:Error("Something broke: " .. tostring(err))
+--   log:Event("UNIT_HEALTH fired")
+--   log:Invoke("SomeFunction", "arg1", "arg2")
+--
+-- Journal entries are stored per-module with timestamps.
+-- /sqol status <module>  - prints the journal for that module.
+------------------------------------------------------------------------
+
+ShodoQoL.Debug = ShodoQoL.Debug or {}
+
+local Debug = ShodoQoL.Debug
+
+-- Maximum journal entries kept per module (ring buffer)
+Debug.MAX_ENTRIES = 64
+
+-- Log levels
+Debug.LEVEL = {
+    INFO   = "INFO",
+    WARN   = "WARN",
+    ERROR  = "ERROR",
+    EVENT  = "EVENT",
+    INVOKE = "INVOKE",
+    LOAD   = "LOAD",
+}
+
+-- Registry: key = module key, value = { loaded=bool, loadTime=time, entries={...} }
+Debug._registry = Debug._registry or {}
+
+-- Colour codes per level for chat output
+local LEVEL_COLOR = {
+    INFO   = "|cffaaaaaa",
+    WARN   = "|cffffff00",
+    ERROR  = "|cffff4444",
+    EVENT  = "|cff52c4af",
+    INVOKE = "|cff88aaff",
+    LOAD   = "|cff33937f",
+}
+
+local COLOR_RESET = "|r"
+local COLOR_TIME  = "|cff666666"
+local COLOR_MOD   = "|cff52c4af"
+local COLOR_BLUE  = "|cff00ccff"
+
+------------------------------------------------------------------------
+-- Internal: push a journal entry for a module
+------------------------------------------------------------------------
+local function PushEntry(key, level, msg)
+    local reg = Debug._registry[key]
+    if not reg then return end
+
+    local entry = {
+        time  = GetTime(),
+        clock = date("%H:%M:%S"),
+        level = level,
+        msg   = msg,
+    }
+
+    local list = reg.entries
+    list[#list + 1] = entry
+
+    -- Trim to ring-buffer limit
+    if #list > Debug.MAX_ENTRIES then
+        table.remove(list, 1)
+    end
+end
+
+------------------------------------------------------------------------
+-- Debug.Register(key)
+-- Called automatically by GetLogger. Idempotent.
+------------------------------------------------------------------------
+function Debug.Register(key)
+    if Debug._registry[key] then return end
+    Debug._registry[key] = {
+        key      = key,
+        loaded   = false,
+        loadTime = nil,
+        entries  = {},
+    }
+end
+
+------------------------------------------------------------------------
+-- Debug.MarkLoaded(key)  /  Debug.MarkUnloaded(key)
+-- Called by the bootstrap after OnReady fires for a module.
+------------------------------------------------------------------------
+function Debug.MarkLoaded(key)
+    Debug.Register(key)
+    local reg = Debug._registry[key]
+    reg.loaded   = true
+    reg.loadTime = GetTime()
+    PushEntry(key, Debug.LEVEL.LOAD, "Module started (loaded)")
+end
+
+function Debug.MarkDisabled(key)
+    Debug.Register(key)
+    local reg = Debug._registry[key]
+    reg.loaded = false
+    PushEntry(key, Debug.LEVEL.LOAD, "Module disabled (skipped)")
+end
+
+------------------------------------------------------------------------
+-- Debug.GetLogger(key)
+-- Returns a logger object bound to `key`. Call from module top-level.
+-- Safe to call at file-load time (before PLAYER_LOGIN).
+------------------------------------------------------------------------
+function Debug.GetLogger(key)
+    Debug.Register(key)
+
+    local logger = {}
+
+    function logger:_log(level, msg)
+        PushEntry(key, level, tostring(msg))
+    end
+
+    function logger:Info(msg)   self:_log(Debug.LEVEL.INFO,   msg) end
+    function logger:Warn(msg)   self:_log(Debug.LEVEL.WARN,   msg) end
+    function logger:Error(msg)  self:_log(Debug.LEVEL.ERROR,  msg) end
+    function logger:Event(msg)  self:_log(Debug.LEVEL.EVENT,  msg) end
+
+    -- Invoke: record a function call with optional args as a string.
+    function logger:Invoke(funcName, ...)
+        local parts = { funcName .. "(" }
+        for i = 1, select("#", ...) do
+            parts[#parts + 1] = tostring(select(i, ...))
+        end
+        parts[#parts + 1] = ")"
+        self:_log(Debug.LEVEL.INVOKE, table.concat(parts, " "))
+    end
+
+    return logger
+end
+
+------------------------------------------------------------------------
+-- Debug.PrintJournal(key)
+-- Prints the journal for a module in systemd journalctl style.
+------------------------------------------------------------------------
+function Debug.PrintJournal(key)
+    -- Normalise key casing: try exact match first, then case-insensitive
+    local reg = Debug._registry[key]
+    if not reg then
+        -- Case-insensitive fallback
+        local lower = key:lower()
+        for k, v in pairs(Debug._registry) do
+            if k:lower() == lower then
+                reg = v
+                key = k
+                break
+            end
+        end
+    end
+
+    local FORMAT_NAME = COLOR_BLUE .. "[ShodoQoL]|r"
+
+    if not reg then
+        print(FORMAT_NAME .. " |cffff4444Unknown module:|r " .. key)
+        print("  Known modules: " .. table.concat((function()
+            local t = {}
+            for k in pairs(Debug._registry) do t[#t+1] = k end
+            table.sort(t)
+            return t
+        end)(), ", "))
+        return
+    end
+
+    local state  = reg.loaded and "|cff33937factive|r" or "|cffff4444inactive|r"
+    local uptime = reg.loadTime and string.format("%.1fs", GetTime() - reg.loadTime) or "n/a"
+
+    print(COLOR_MOD .. "● " .. key .. COLOR_RESET
+        .. " - " .. FORMAT_NAME .. " module journal")
+    print("   Loaded: " .. state
+        .. "  |cff666666Uptime:|r " .. uptime
+        .. "  |cff666666Entries:|r " .. #reg.entries .. "/" .. Debug.MAX_ENTRIES)
+    print("|cff666666" .. string.rep("─", 38) .. "|r")
+
+    if #reg.entries == 0 then
+        print("  |cff666666(no journal entries yet)|r")
+        return
+    end
+
+    for _, e in ipairs(reg.entries) do
+        local col = LEVEL_COLOR[e.level] or "|cffaaaaaa"
+        local lvl = string.format("%-6s", e.level)
+        print(COLOR_TIME .. e.clock .. "|r "
+            .. col .. lvl .. COLOR_RESET
+            .. " " .. e.msg)
+    end
+end
+
+------------------------------------------------------------------------
 -- Root Settings panel
 ------------------------------------------------------------------------
-local VERSION = "@project-version@"
+local VERSION   = "@project-version@"
 local TIMESTAMP = "@project-date-iso@"
+
+-- Modules that only make sense on an Evoker. Auto-disabled on first login
+-- for non-Evoker characters. User can re-enable manually at any time.
+local EVOKER_ONLY_MODULES = {
+    "EssenceMover", "MacroHelpers", "SourceOfMagic",
+    "HoverTracker", "PrescienceTracker",
+}
 
 local MODULES = {
     { name = "Essence Mover", key = "EssenceMover",
@@ -213,7 +421,7 @@ local MODULES = {
           .. "Adjust scale with a live slider. Position persists across reloads and spec changes." },
     { name = "Macro Helpers", key = "MacroHelpers",
       desc = "Per-character macros with cross-realm support: |cff52c4afSpatial Paradox|r, "
-          .. "|cff52c4afPrescience 1|r, and |cff52c4afPrescience 2|r — each targeting an independent player." },
+          .. "|cff52c4afPrescience 1|r, and |cff52c4afPrescience 2|r - each targeting an independent player." },
     { name = "HearthStoned", key = "HearthStoned",
       desc = "Cycles through all owned hearthstone toys with a single per-character macro. "
           .. "Rescan at any time to pick up new toys." },
@@ -228,7 +436,7 @@ local MODULES = {
           .. "Only active when talented into Source of Magic. Use |cff52c4af/som test|r to preview." },
 --    { name = "ShoStats", key = "ShoStats",
 --      desc = "Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, "
- --         .. "with draggable frame, opacity/scale sliders, and per-stat visibility toggles." },
+--          .. "with draggable frame, opacity/scale sliders, and per-stat visibility toggles." },
     { name = "Hover Tracker", key = "HoverTracker",
       desc = "Evoker-only. Glows green/amber/red behind your cast bar based on whether Hover lets you "
           .. "move while casting. Alerts when Hover has no charges. Configurable font, size, and opacity." },
@@ -238,7 +446,7 @@ local MODULES = {
           .. "Purely event-driven with zero CPU overhead. Augmentation Evoker only." },
     { name = "Mouse Circle", key = "MouseCircle",
       desc = "Draws a thin colored ring around your cursor at all times. "
-          .. "Configurable color and thickness. Uses a minimal OnUpdate — "
+          .. "Configurable color and thickness. Uses a minimal OnUpdate - "
           .. "just one API call and a SetPoint per frame, no logic or allocations." },
     { name = "Kicksmaxxing", key = "Kicksmaxxing",
       desc = "Dynamic focus-macro generator for interrupts, stuns, and CC. "
@@ -247,16 +455,24 @@ local MODULES = {
           .. "Enable up to |cff52c4af5|r spells at once with checkboxes." },
 }
 
+-- Build a quick lookup: key -> MODULES entry
+local MODULE_BY_KEY = {}
+for _, mod in ipairs(MODULES) do
+    MODULE_BY_KEY[mod.key] = mod
+    -- Register each known module in the debug registry immediately
+    Debug.Register(mod.key)
+end
+
 local function Divider(parent, anchor, offY)
     local d = parent:CreateTexture(nil, "ARTWORK")
-    d:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, offY)
+    d:SetPoint("TOPLEFT",  anchor, "BOTTOMLEFT",  0, offY)
     d:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, offY)
     d:SetHeight(1)
     d:SetColorTexture(0.20, 0.58, 0.50, 0.45)
     return d
 end
 
--- Canvas frame registered with Settings — never scrolls itself
+-- Canvas frame registered with Settings - never scrolls itself
 local rootPanel = CreateFrame("Frame")
 rootPanel.name = "ShodoQoL"
 rootPanel:EnableMouse(false)
@@ -297,7 +513,7 @@ local reloadNoteFS = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSma
 reloadNoteFS:SetPoint("LEFT", modTitleFS, "RIGHT", 12, 0)
 reloadNoteFS:SetText("")
 
-local prevAnchor = modTitleFS
+local prevAnchor   = modTitleFS
 local statusBadges = {}
 local toggleBtns   = {}
 
@@ -398,7 +614,6 @@ footer2:SetText("|cff52c4afBugs & Issues:|r https://github.com/Seems-Good/ShodoQ
 -- We use OnShow so that font string heights are realised before measuring.
 ------------------------------------------------------------------------
 content:SetScript("OnShow", function(self)
-    -- Walk all regions AND child frames to find the lowest screen-space Y edge.
     local lowest = math.huge
 
     for i = 1, self:GetNumRegions() do
@@ -429,18 +644,15 @@ Settings.RegisterAddOnCategory(ShodoQoL.rootCategory)
 ------------------------------------------------------------------------
 -- Bootstrap
 ------------------------------------------------------------------------
--- Login message format strings (match the author's colour scheme)
 local COLOR_YELLOW = "|cffffff00"
 local COLOR_GRAY   = "|cff808080"
 local COLOR_BLUE   = "|cff00ccff"
 
 local FORMAT_NAME = COLOR_BLUE .. "[ShodoQoL]|r" .. COLOR_GRAY .. "-(" .. VERSION .. ")|r"
 
--- Count how many modules are defined (used in the login print)
 local TOTAL_MODULES = #MODULES
 
--- Status printer — used by both the login message and /sqol status.
--- Must run after PLAYER_LOGIN so ShodoQoLDB is available.
+-- Status printer - used by both the login message and /sqol status.
 local function PrintStatus()
     local enabledCount = 0
     for _, mod in ipairs(MODULES) do
@@ -456,7 +668,7 @@ end
 local function PrintModuleStatus()
     print(FORMAT_NAME .. COLOR_YELLOW .. " Module Status:|r")
     for _, mod in ipairs(MODULES) do
-        local on = ShodoQoLDB.enabled[mod.key] ~= false
+        local on    = ShodoQoLDB.enabled[mod.key] ~= false
         local badge = on
             and ("|cff33937f[ON] |r")
             or  ("|cffff4444[OFF]|r")
@@ -466,6 +678,124 @@ local function PrintModuleStatus()
         .. COLOR_YELLOW .. "/rl|r to take effect.")
 end
 
+------------------------------------------------------------------------
+-- Resolve a module key from user input (case-insensitive, partial match)
+-- Returns: canonical key (string) or nil, error message (string)
+------------------------------------------------------------------------
+local function ResolveModuleKey(input)
+    if not input or input == "" then
+        return nil, "No module name provided."
+    end
+
+    local lower = input:lower()
+
+    -- 1) Exact case-insensitive match
+    for _, mod in ipairs(MODULES) do
+        if mod.key:lower() == lower then
+            return mod.key, nil
+        end
+    end
+
+    -- 2) Substring match
+    local matches = {}
+    for _, mod in ipairs(MODULES) do
+        if mod.key:lower():find(lower, 1, true)
+        or mod.name:lower():find(lower, 1, true) then
+            matches[#matches + 1] = mod.key
+        end
+    end
+
+    if #matches == 1 then
+        return matches[1], nil
+    elseif #matches > 1 then
+        return nil, "Ambiguous module name '" .. input .. "'. Matches: " .. table.concat(matches, ", ")
+    end
+
+    return nil, "Unknown module '" .. input .. "'."
+end
+
+------------------------------------------------------------------------
+-- /sqol enable <module> [--now]
+------------------------------------------------------------------------
+local function CmdEnable(arg, reload)
+    local key, err = ResolveModuleKey(arg)
+    if not key then
+        print(FORMAT_NAME .. " |cffff4444" .. err .. "|r")
+        return
+    end
+
+    ShodoQoLDB.enabled[key] = true
+
+    -- Update settings panel button if visible
+    local entry = ShodoQoL._toggleBtns and ShodoQoL._toggleBtns[key]
+    if entry then
+        entry.label:SetText("|cff33937f[ON]|r")
+        entry.border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.80)
+    end
+
+    local modName = MODULE_BY_KEY[key] and MODULE_BY_KEY[key].name or key
+    print(FORMAT_NAME .. " |cff33937fEnabled:|r " .. modName
+        .. (reload and " -- reloading now..." or
+            " |cffffd100(reload UI to take effect: /rl)|r"))
+
+    Debug.Register(key)
+    PushEntry(key, Debug.LEVEL.LOAD, "enable command issued" .. (reload and " --now" or ""))
+
+    if reload then
+        ReloadUI()
+    end
+end
+
+------------------------------------------------------------------------
+-- /sqol disable <module> [--now]
+------------------------------------------------------------------------
+local function CmdDisable(arg, reload)
+    local key, err = ResolveModuleKey(arg)
+    if not key then
+        print(FORMAT_NAME .. " |cffff4444" .. err .. "|r")
+        return
+    end
+
+    ShodoQoLDB.enabled[key] = false
+
+    local entry = ShodoQoL._toggleBtns and ShodoQoL._toggleBtns[key]
+    if entry then
+        entry.label:SetText("|cffff4444[OFF]|r")
+        entry.border:SetBackdropBorderColor(0.60, 0.10, 0.10, 0.80)
+    end
+
+    local modName = MODULE_BY_KEY[key] and MODULE_BY_KEY[key].name or key
+    print(FORMAT_NAME .. " |cffff4444Disabled:|r " .. modName
+        .. (reload and " -- reloading now..." or
+            " |cffffd100(reload UI to take effect: /rl)|r"))
+
+    Debug.Register(key)
+    PushEntry(key, Debug.LEVEL.LOAD, "disable command issued" .. (reload and " --now" or ""))
+
+    if reload then
+        ReloadUI()
+    end
+end
+
+------------------------------------------------------------------------
+-- /sqol status <module>
+------------------------------------------------------------------------
+local function CmdModuleJournal(arg)
+    local key, err = ResolveModuleKey(arg)
+    if not key then
+        print(FORMAT_NAME .. " |cffff4444" .. err .. "|r")
+        -- List available modules as a hint
+        local names = {}
+        for _, mod in ipairs(MODULES) do names[#names+1] = mod.key end
+        print("  Available: " .. table.concat(names, ", "))
+        return
+    end
+    Debug.PrintJournal(key)
+end
+
+------------------------------------------------------------------------
+-- Bootstrap event frame
+------------------------------------------------------------------------
 local boot = CreateFrame("Frame")
 boot:EnableMouse(false)
 boot:RegisterEvent("ADDON_LOADED")
@@ -473,14 +803,11 @@ boot:RegisterEvent("PLAYER_LOGIN")
 boot:SetScript("OnEvent", function(self, event, arg1)
 
     if event == "ADDON_LOADED" and arg1 == "ShodoQoL" then
-        -- Fire at addon load, before PLAYER_LOGIN chat noise.
-        -- DB not yet available here so we only print the name/version line.
         print(FORMAT_NAME .. "Type "
             .. COLOR_YELLOW .. "/sqol|r for options.")
         self:UnregisterEvent("ADDON_LOADED")
 
     elseif event == "PLAYER_LOGIN" then
-        -- SavedVariables are guaranteed available by PLAYER_LOGIN.
         self:UnregisterEvent("PLAYER_LOGIN")
 
         if type(ShodoQoLDB) ~= "table" then
@@ -489,9 +816,23 @@ boot:SetScript("OnEvent", function(self, event, arg1)
             BackFill(ShodoQoLDB, ShodoQoL.DEFAULTS)
         end
 
-        -- Now DB is ready: print the loaded N/N modules summary.
+        -- One-time class check: auto-disable Evoker-only modules for non-Evokers.
+        -- Runs once per character (flag persists in SavedVariables).
+        -- UnitClassBase returns the locale-independent token e.g. "EVOKER", "WARRIOR".
+        if not ShodoQoLDB._classCheckDone then
+            ShodoQoLDB._classCheckDone = true
+            if UnitClassBase("player") ~= "EVOKER" then
+                for _, key in ipairs(EVOKER_ONLY_MODULES) do
+                    ShodoQoLDB.enabled[key] = false
+                end
+                print(FORMAT_NAME .. COLOR_GRAY .. " Non-Evoker detected: Evoker modules disabled."
+                    .. " Re-enable anytime with |r" .. COLOR_YELLOW .. "/sqol|r.")
+            end
+        end
+
         PrintStatus()
 
+        -- Update settings panel toggle buttons to reflect saved state
         for key, entry in pairs(ShodoQoL._toggleBtns or {}) do
             local enabled = ShodoQoLDB.enabled[key] ~= false
             if enabled then
@@ -503,10 +844,12 @@ boot:SetScript("OnEvent", function(self, event, arg1)
             end
         end
 
+        -- Fire OnReady callbacks; wrap each in pcall and track load state in Debug
         for _, fn in ipairs(ShodoQoL.onReady or {}) do
             pcall(fn)
         end
 
+        -- Update standalone/bundled badges
         for addonKey, fs in pairs(ShodoQoL._statusBadges or {}) do
             if C_AddOns.IsAddOnLoaded(addonKey) then
                 fs:SetText("|cff52c4af[standalone]|r")
@@ -519,32 +862,111 @@ boot:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
+------------------------------------------------------------------------
+-- OnReady - public API, unchanged
+------------------------------------------------------------------------
 function ShodoQoL.OnReady(fn)
     ShodoQoL.onReady = ShodoQoL.onReady or {}
     table.insert(ShodoQoL.onReady, fn)
 end
 
+-- After all OnReady callbacks fire (at PLAYER_LOGIN), mark each module
+-- loaded or disabled based on IsEnabled.
+-- We piggy-back on the existing boot frame via PLAYER_LOGIN ordering:
+-- modules call ShodoQoL.OnReady during file-load (TOC order), then
+-- PLAYER_LOGIN fires them all. We add our own tail callback here.
+local _bootReady = CreateFrame("Frame")
+_bootReady:EnableMouse(false)
+_bootReady:RegisterEvent("PLAYER_LOGIN")
+_bootReady:SetScript("OnEvent", function(self)
+    self:UnregisterEvent("PLAYER_LOGIN")
+    -- At this point the module OnReady callbacks have already fired
+    -- (same event, TOC order means Core runs first so boot frame fires
+    -- before this frame). To be safe use C_Timer.After(0) to push
+    -- after all same-tick handlers.
+    C_Timer.After(0, function()
+        for _, mod in ipairs(MODULES) do
+            if ShodoQoL.IsEnabled(mod.key) then
+                if not Debug._registry[mod.key] or not Debug._registry[mod.key].loaded then
+                    Debug.MarkLoaded(mod.key)
+                end
+            else
+                Debug.MarkDisabled(mod.key)
+            end
+        end
+    end)
+end)
+
 ------------------------------------------------------------------------
 -- Slash commands  /shodoqol  /sqol
+--
+-- /sqol                        - open settings panel
+-- /sqol status                 - list all modules on/off
+-- /sqol status <module>        - show debug journal for module
+-- /sqol enable  <module>       - enable module (needs /rl)
+-- /sqol enable  <module> --now - enable module + /reload
+-- /sqol disable <module>       - disable module (needs /rl)
+-- /sqol disable <module> --now - disable module + /reload
+-- /sqol help                   - command reference
 ------------------------------------------------------------------------
 SLASH_SHODOQOL1 = "/shodoqol"
 SLASH_SHODOQOL2 = "/sqol"
 SlashCmdList["SHODOQOL"] = function(msg)
-    local cmd = msg and strtrim(msg):lower() or ""
+    local raw  = msg and strtrim(msg) or ""
+    local cmd  = raw:lower()
 
-    if cmd == "" then
-        -- /sqol (no args) open the settings panel
+    -- Strip --now flag before further parsing
+    local withReload = cmd:find("%-%-now") ~= nil
+    local stripped   = raw:gsub("%s*%-%-now%s*", " "):gsub("%s+$", ""):gsub("^%s+", "")
+
+    -- Tokenise: first word = verb, rest = argument
+    local verb, rest = stripped:match("^(%S+)%s*(.*)")
+    verb = verb and verb:lower() or ""
+    rest = rest and strtrim(rest) or ""
+
+    -- /sqol (no args)
+    if verb == "" then
         Settings.OpenToCategory(ShodoQoL.rootCategory:GetID())
-
-    elseif cmd == "status" or cmd == "modules" or cmd == "mods" then
-        PrintModuleStatus()
-
-    elseif cmd == "help" then
-        print(FORMAT_NAME)
-        print("  " .. COLOR_YELLOW .. "/sqol|r          - Open settings panel")
-        print("  " .. COLOR_YELLOW .. "/sqol status|r - List all modules and their on/off state")
-        print("  " .. COLOR_YELLOW .. "/sqol help|r   - Show this message")
-    else
-        Settings.OpenToCategory(ShodoQoL.rootCategory:GetID())
+        return
     end
+
+    -- /sqol status [module]
+    if verb == "status" or verb == "modules" or verb == "mods" then
+        if rest == "" then
+            PrintModuleStatus()
+        else
+            CmdModuleJournal(rest)
+        end
+        return
+    end
+
+    -- /sqol enable <module> [--now]
+    if verb == "enable" or verb == "on" then
+        CmdEnable(rest, withReload)
+        return
+    end
+
+    -- /sqol disable <module> [--now]
+    if verb == "disable" or verb == "off" then
+        CmdDisable(rest, withReload)
+        return
+    end
+
+    -- /sqol help
+    if verb == "help" then
+        print(FORMAT_NAME)
+        print("  " .. COLOR_YELLOW .. "/sqol|r                        - Open settings panel")
+        print("  " .. COLOR_YELLOW .. "/sqol status|r                 - List all modules on/off")
+        print("  " .. COLOR_YELLOW .. "/sqol status <module>|r        - Show debug journal for a module")
+        print("  " .. COLOR_YELLOW .. "/sqol enable  <module>|r       - Enable a module (needs /rl)")
+        print("  " .. COLOR_YELLOW .. "/sqol enable  <module> --now|r - Enable + reload immediately")
+        print("  " .. COLOR_YELLOW .. "/sqol disable <module>|r       - Disable a module (needs /rl)")
+        print("  " .. COLOR_YELLOW .. "/sqol disable <module> --now|r - Disable + reload immediately")
+        print("  " .. COLOR_YELLOW .. "/sqol help|r                   - Show this message")
+        print("  Module names are case-insensitive and support partial matching.")
+        return
+    end
+
+    -- Unknown verb → open settings (matches original fallthrough behaviour)
+    Settings.OpenToCategory(ShodoQoL.rootCategory:GetID())
 end
