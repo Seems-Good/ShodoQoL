@@ -86,3 +86,20 @@ Pulsing warning when you die in a group instance. Configurable text, color, font
 Lightweight stat readout frame: Crit, Haste, Mastery, Vers, Leech, Speed, and main stat, with draggable frame, opacity/scale sliders, and per-stat visibility toggles.~~
 
 ### ShoStats [disabled after v1.7.1]  (Broken in WoW patch 12.0.5 with new combat API restrictions)
+
+---
+
+### Contributing
+
+**ReleaseHelpers:**
+
+```bash
+
+patch (0.0.*+1):
+    - just build (git tag --sort=-v:refname | head -n1 | awk -F'[v.]' '{printf "%d.%d.%d\n",$2,$3,$4+1}') "[feature] [bugfix] [UI] [Module/$NAME]"
+minor/feature (0.*+1.*):
+    - just build (git tag --sort=-v:refname | head -n1 | awk -F'[v.]' '{printf "%d.%d.%d\n",$2,$3+1,$4}') "[new] [feature] [bugfix] [UI] [Module/$NAME]"
+major/breaking (*+1.0.0):
+    - just build (git tag --sort=-v:refname | head -n1 | awk -F'[v.]' '{printf "%d.%d.%d\n",$2+1,$3,$4}') "[new] [feature] [bugfix] [UI] [Module/$NAME]"
+
+```
