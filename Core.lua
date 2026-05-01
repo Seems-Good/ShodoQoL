@@ -100,10 +100,18 @@ ShodoQoL.DEFAULTS = {
         thickness = 2,
         radius    = 16,
     },
-    -- Set true after one-time class check. BackFill gives this to existing installs.
+    -- Per-character profiles live here, keyed by "CharName-RealmName".
+    -- BackFill adds this key to any existing install automatically.
+    profiles = {},
+}
+
+-- Default state for a new character profile.
+-- Separated from DEFAULTS so BackFill doesn't flatten it into the global DB.
+ShodoQoL.PROFILE_DEFAULTS = {
+    -- Set true after the one-time class check so it only runs on first login.
     _classCheckDone = false,
 
-    -- Per-module enabled flags. false = disabled (requires reload to take effect).
+    -- Per-module enabled flags for this character.
     enabled = {
         EssenceMover      = true,
         MacroHelpers      = true,
@@ -140,11 +148,11 @@ end
 -- DEFAULTS when ShodoQoLDB hasn't been initialised yet.
 ------------------------------------------------------------------------
 function ShodoQoL.IsEnabled(key)
-    if type(ShodoQoLDB) == "table" then
-        return ShodoQoLDB.enabled[key] ~= false
+    -- Profile is set at PLAYER_LOGIN; until then fall back to compile-time defaults.
+    if ShodoQoL._profile then
+        return ShodoQoL._profile.enabled[key] ~= false
     end
-    -- DB not ready yet - consult compile-time defaults
-    return ShodoQoL.DEFAULTS.enabled[key] ~= false
+    return ShodoQoL.PROFILE_DEFAULTS.enabled[key] ~= false
 end
 
 ------------------------------------------------------------------------
@@ -564,9 +572,9 @@ for _, mod in ipairs(MODULES) do
     local modKey = mod.key
     toggleBtn:SetScript("OnClick", function()
         if not modKey then return end
-        local cur = ShodoQoLDB.enabled[modKey]
+        local cur = ShodoQoL._profile.enabled[modKey]
         local new = (cur == false) and true or false
-        ShodoQoLDB.enabled[modKey] = new
+        ShodoQoL._profile.enabled[modKey] = new
         local entry = toggleBtns[modKey]
         if new then
             entry.label:SetText("|cff33937f[ON]|r")
@@ -656,7 +664,7 @@ local TOTAL_MODULES = #MODULES
 local function PrintStatus()
     local enabledCount = 0
     for _, mod in ipairs(MODULES) do
-        if ShodoQoLDB.enabled[mod.key] ~= false then
+        if ShodoQoL._profile.enabled[mod.key] ~= false then
             enabledCount = enabledCount + 1
         end
     end
@@ -668,7 +676,7 @@ end
 local function PrintModuleStatus()
     print(FORMAT_NAME .. COLOR_YELLOW .. " Module Status:|r")
     for _, mod in ipairs(MODULES) do
-        local on    = ShodoQoLDB.enabled[mod.key] ~= false
+        local on    = ShodoQoL._profile.enabled[mod.key] ~= false
         local badge = on
             and ("|cff33937f[ON] |r")
             or  ("|cffff4444[OFF]|r")
@@ -724,7 +732,7 @@ local function CmdEnable(arg, reload)
         return
     end
 
-    ShodoQoLDB.enabled[key] = true
+    ShodoQoL._profile.enabled[key] = true
 
     -- Update settings panel button if visible
     local entry = ShodoQoL._toggleBtns and ShodoQoL._toggleBtns[key]
@@ -756,7 +764,7 @@ local function CmdDisable(arg, reload)
         return
     end
 
-    ShodoQoLDB.enabled[key] = false
+    ShodoQoL._profile.enabled[key] = false
 
     local entry = ShodoQoL._toggleBtns and ShodoQoL._toggleBtns[key]
     if entry then
@@ -810,20 +818,35 @@ boot:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_LOGIN" then
         self:UnregisterEvent("PLAYER_LOGIN")
 
+        -- Init or back-fill the global DB (non-profile settings: positions, etc.)
         if type(ShodoQoLDB) ~= "table" then
             ShodoQoLDB = CopyTable(ShodoQoL.DEFAULTS)
         else
             BackFill(ShodoQoLDB, ShodoQoL.DEFAULTS)
         end
 
-        -- One-time class check: auto-disable Evoker-only modules for non-Evokers.
-        -- Runs once per character (flag persists in SavedVariables).
-        -- UnitClassBase returns the locale-independent token e.g. "EVOKER", "WARRIOR".
-        if not ShodoQoLDB._classCheckDone then
-            ShodoQoLDB._classCheckDone = true
+        -- Resolve per-character profile. Each character gets its own enabled flags
+        -- and class-check state, keyed by "CharName-RealmName".
+        ShodoQoLDB.profiles = ShodoQoLDB.profiles or {}
+        local charKey = UnitName("player") .. "-" .. GetRealmName()
+
+        if not ShodoQoLDB.profiles[charKey] then
+            -- First time this character has logged in with ShodoQoL.
+            ShodoQoLDB.profiles[charKey] = CopyTable(ShodoQoL.PROFILE_DEFAULTS)
+        else
+            -- Back-fill any new keys added to PROFILE_DEFAULTS since last login.
+            BackFill(ShodoQoLDB.profiles[charKey], ShodoQoL.PROFILE_DEFAULTS)
+        end
+
+        ShodoQoL._profile = ShodoQoLDB.profiles[charKey]
+
+        -- One-time class check per character: auto-disable Evoker-only modules
+        -- for non-Evokers. UnitClassBase is locale-independent.
+        if not ShodoQoL._profile._classCheckDone then
+            ShodoQoL._profile._classCheckDone = true
             if UnitClassBase("player") ~= "EVOKER" then
                 for _, key in ipairs(EVOKER_ONLY_MODULES) do
-                    ShodoQoLDB.enabled[key] = false
+                    ShodoQoL._profile.enabled[key] = false
                 end
                 print(FORMAT_NAME .. COLOR_GRAY .. " Non-Evoker detected: Evoker modules disabled."
                     .. " Re-enable anytime with |r" .. COLOR_YELLOW .. "/sqol|r.")
@@ -834,7 +857,7 @@ boot:SetScript("OnEvent", function(self, event, arg1)
 
         -- Update settings panel toggle buttons to reflect saved state
         for key, entry in pairs(ShodoQoL._toggleBtns or {}) do
-            local enabled = ShodoQoLDB.enabled[key] ~= false
+            local enabled = ShodoQoL._profile.enabled[key] ~= false
             if enabled then
                 entry.label:SetText("|cff33937f[ON]|r")
                 entry.border:SetBackdropBorderColor(0.20, 0.58, 0.50, 0.80)
