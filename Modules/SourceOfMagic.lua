@@ -374,7 +374,7 @@ local function DoCheck()
     label:SetText("SOURCE OF MAGIC")
     local lines = {}
     for _, h in ipairs(healers) do
-        lines[#lines + 1] = (h.hasSoM and "|cff33937f✔|r " or "|cffff4444✘|r ") .. h.name
+        lines[#lines + 1] = (h.hasSoM and "|cff33937f[+]|r " or "|cffff4444[x]|r ") .. h.name
     end
     lines[#lines + 1] = "|cff888888Set a macro target to track one healer|r"
     detailLabel:SetText(table.concat(lines, "   "))
