@@ -463,9 +463,9 @@ local MODULES = {
           .. "casts on focus when alive/hostile, otherwise focuses-and-casts on the next enemy. "
           .. "Enable up to |cff52c4af5|r spells at once with checkboxes." },
     { name = "Wim", key = "Wim",
-      desc = "Vim-style notepad. Open with |cff52c4af/sqol wim|r."
-          .. "Full modal editing: Normal, Insert, Visual, and Ex modes."
-          .. "Supports |cff52c4af:w|r |cff52c4af:q|r |cff52c4af:wq|r, yank/paste, line, and word operations." },
+      desc = "Vim-style Text editor. Open with |cff52c4af/wim|r."
+          .. " Supports: Normal, Insert, Visual, Ex modes, string substitution, search, and much more!."
+          .. " Key-Binds: |cff52c4af:w|r |cff52c4af:q|r |cff52c4af:wq|r" },
 }
 
 -- Build a quick lookup: key -> MODULES entry
