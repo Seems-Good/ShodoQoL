@@ -124,6 +124,7 @@ ShodoQoL.PROFILE_DEFAULTS = {
         PrescienceTracker = true,
         MouseCircle       = false,
         Kicksmaxxing      = true,
+        Wim               = true,
     },
 }
 
@@ -461,6 +462,10 @@ local MODULES = {
           .. "Enter any spell name to create a |cff52c4afKM_SpellName|r character macro that "
           .. "casts on focus when alive/hostile, otherwise focuses-and-casts on the next enemy. "
           .. "Enable up to |cff52c4af5|r spells at once with checkboxes." },
+    { name = "Wim", key = "Wim",
+      desc = "Vim-style notepad. Open with |cff52c4af/sqol wim|r."
+          .. "Full modal editing: Normal, Insert, Visual, and Ex modes."
+          .. "Supports |cff52c4af:w|r |cff52c4af:q|r |cff52c4af:wq|r, yank/paste, line, and word operations." },
 }
 
 -- Build a quick lookup: key -> MODULES entry
