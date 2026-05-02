@@ -662,6 +662,7 @@ local function HandleNormalKey(key, ctrl, shift)
         if     key == "ESCAPE"                        then EnterNormal()
         elseif key == "BACKSPACE"                     then ExBackspace()
         elseif key == "ENTER" or key == "NUMPADENTER" then ExExecute()
+        elseif key == "SPACE"                         then ExAppend(" ")
         elseif #key == 1                              then ExAppend(key)
         end
         return
