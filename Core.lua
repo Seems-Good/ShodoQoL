@@ -17,6 +17,7 @@ ShodoQoL.DEFAULTS = {
         x = nil,
         y = nil,
         scale = 1.5,
+        modernLook = fasle,
     },
     spatialParadox = {
         targetName  = nil,

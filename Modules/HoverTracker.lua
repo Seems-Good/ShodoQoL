@@ -165,8 +165,8 @@ function UI.ApplySettings()
     if not UI.built then return end
     local db = ShodoQoLDB.hoverTracker
 
-
-    -- Essence glow size
+    -- Essence glow size — always recalculated from UI.essBar so that whichever
+    -- frame is currently the active anchor (original bar or modern bar) is used.
     local bX = db.essBleedX
     local bY = db.essBleedY
     local w  = math.max(UI.essBar:GetWidth(),  10) + bX * 2
@@ -218,6 +218,28 @@ HoverTracker = {}
 HoverTracker.hoverTimer    = nil
 HoverTracker.warnTimer     = nil
 HoverTracker.hoverDuration = HOVER_BASE_DURATION
+
+------------------------------------------------------------------------
+-- SetEssenceAnchor
+-- Called by EssenceMover whenever it redirects the HoverTracker essence
+-- glow to a different frame (e.g. switching between the custom modern bar
+-- and the original EssencePlayerFrame).
+--
+-- Updating UI.essBar here is the critical step: without it,
+-- UI.ApplySettings() keeps recalculating the glow size from the stale
+-- original-bar dimensions and silently overwrites whatever EssenceMover
+-- set — making the HoverTracker height/width padding sliders appear to
+-- "reset" every time a position-apply or spec-change fires.
+------------------------------------------------------------------------
+function HoverTracker.SetEssenceAnchor(anchor)
+    if not UI.built or not anchor then return end
+    UI.essBar = anchor
+    -- Recalculate size from the new anchor's dimensions + saved bleed values.
+    UI.ApplySettings()
+    -- Re-anchor the glow frame's CENTER to the new frame.
+    UI.essRoot:ClearAllPoints()
+    UI.essRoot:SetPoint("CENTER", anchor, "CENTER", 0, 0)
+end
 
 function HoverTracker:CancelTimers()
     if self.hoverTimer then self.hoverTimer:Cancel(); self.hoverTimer = nil end
