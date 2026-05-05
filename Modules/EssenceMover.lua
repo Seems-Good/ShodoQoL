@@ -3,7 +3,6 @@
 -- Optional "Modern Look": replaces it with a rectangular green bar.
 -- Reads/writes ShodoQoLDB.essenceMover:
 --   x, y, scale, modernLook, bgOpacity, barAlpha, modernScaleW, modernScaleH
---
 -- Performance notes
 -- -----------------
 -- Zero C_Timer.NewTicker usage.  Zero AnimationGroup usage.
