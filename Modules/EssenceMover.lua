@@ -6,9 +6,11 @@
 --
 -- Performance notes
 -- -----------------
--- Zero C_Timer.NewTicker usage.  Charging pip animation runs via WoW's
--- AnimationGroup system (GPU-side, zero Lua ticks).  Power updates fire
--- only from UNIT_POWER_UPDATE (integer changes only — not sub-pip churn).
+-- Zero C_Timer.NewTicker usage.  Zero AnimationGroup usage.
+-- Sub-pip charge progress is driven by UnitPartialPower("player", ESSENCE_POWER)
+-- which returns 0–1000 (confirmed in 12.0.5).  Updates fire from
+-- UNIT_POWER_FREQUENT (~0.5 s server cadence) for sub-pip churn, and
+-- UNIT_POWER_UPDATE for integer pip changes.  No Lua ticks between events.
 -- EssencePlayerFrame has its mouse disabled while the modern bar is active
 -- so its tooltip no longer ghosts at the original position under the
 -- character frame.
@@ -71,23 +73,9 @@ local PIP_GAP =  5
 local BAR_PAD =  7
 
 local CR,  CG,  CB  = 0.25, 0.78, 0.64   -- charged fill
-local CHR, CHG, CHB = 0.16, 0.52, 0.40   -- charging fill
+local CHR, CHG, CHB = 0.16, 0.52, 0.40   -- charging fill / progress tint
 local BDR, BDG, BDB = 0.22, 0.70, 0.56   -- border accent
 local BGR, BGG, BGB = 0.03, 0.10, 0.08   -- background colour
-
-------------------------------------------------------------------------
--- CreateChargeAnimation – GPU-driven alpha bounce, zero Lua ticks
-------------------------------------------------------------------------
-local function CreateChargeAnimation(texture)
-    local ag    = texture:CreateAnimationGroup()
-    ag:SetLooping("BOUNCE")
-    local alpha = ag:CreateAnimation("Alpha")
-    alpha:SetFromAlpha(0.15)
-    alpha:SetToAlpha(0.65)
-    alpha:SetDuration(0.75)
-    alpha:SetSmoothing("IN_OUT")
-    return ag
-end
 
 ------------------------------------------------------------------------
 -- ApplyBgOpacity – live-updates background strip alpha without rebuild
@@ -251,6 +239,7 @@ local function BuildModernBar()
         pipBg:SetAllPoints()
         pipBg:SetColorTexture(0.06, 0.17, 0.13, 1.0)
 
+        -- Full charged fill (shown when pip is complete)
         local fill = pip:CreateTexture(nil, "ARTWORK")
         fill:SetPoint("TOPLEFT",     pip, "TOPLEFT",     1, -1)
         fill:SetPoint("BOTTOMRIGHT", pip, "BOTTOMRIGHT", -1,  1)
@@ -266,6 +255,7 @@ local function BuildModernBar()
         sheen:Hide()
         pip.sheen = sheen
 
+        -- Dim background tint shown while a pip is charging
         local chargeFill = pip:CreateTexture(nil, "ARTWORK")
         chargeFill:SetPoint("TOPLEFT",     pip, "TOPLEFT",     1, -1)
         chargeFill:SetPoint("BOTTOMRIGHT", pip, "BOTTOMRIGHT", -1,  1)
@@ -273,7 +263,16 @@ local function BuildModernBar()
         chargeFill:Hide()
         pip.chargeFill = chargeFill
 
-        pip.chargeAnim = CreateChargeAnimation(chargeFill)
+        -- Real charge progress bar driven by UnitPartialPower/1000.
+        -- Width is set dynamically by UpdateModernBar; height follows
+        -- pip anchors automatically when the pip is resized.
+        local chargeProgress = pip:CreateTexture(nil, "ARTWORK")
+        chargeProgress:SetPoint("TOPLEFT",    pip, "TOPLEFT",    1, -1)
+        chargeProgress:SetPoint("BOTTOMLEFT", pip, "BOTTOMLEFT", 1,  1)
+        chargeProgress:SetWidth(1)
+        chargeProgress:SetColorTexture(CR, CG, CB, 0.60)
+        chargeProgress:Hide()
+        pip.chargeProgress = chargeProgress
 
         local pipBorder = CreateFrame("Frame", nil, pip, "BackdropTemplate")
         pipBorder:SetAllPoints()
@@ -314,35 +313,49 @@ local function BuildModernBar()
 end
 
 ------------------------------------------------------------------------
--- UpdateModernBar – event-driven, no polling
+-- UpdateModernBar – fully event-driven, no polling, no animations.
+--
+-- UnitPartialPower returns 0–1000 for the currently-charging pip
+-- (confirmed in patch 12.0.5).  UNIT_POWER_FREQUENT fires this at the
+-- server's sub-pip cadence (~0.5 s); UNIT_POWER_UPDATE fires on integer
+-- pip changes.  Both route here via the same event handler.
 ------------------------------------------------------------------------
 local function UpdateModernBar()
     if not modernBar then return end
 
-    local current = UnitPower("player", ESSENCE_POWER) or 0
-    local max     = modernBar.maxEssence or 6
+    local current  = UnitPower("player", ESSENCE_POWER) or 0
+    local max      = modernBar.maxEssence or 6
+    -- 0–1000: how far the next pip has charged.  0 when at max essence
+    -- (no pip is charging) or at the very start of a new charge cycle.
+    local partial  = UnitPartialPower("player", ESSENCE_POWER) or 0
+    local fraction = partial / 1000   -- 0.0–1.0
 
     for i = 1, max do
         local pip = modernBar.pips[i]
         if not pip then break end
 
         if i <= current then
+            -- Fully charged pip
             pip.fill:Show()
             pip.sheen:Show()
             pip.chargeFill:Hide()
-            if pip.chargeAnim:IsPlaying() then pip.chargeAnim:Stop() end
+            pip.chargeProgress:Hide()
 
         elseif i == current + 1 and current < max then
+            -- This pip is actively charging — show real progress
             pip.fill:Hide()
             pip.sheen:Hide()
             pip.chargeFill:Show()
-            if not pip.chargeAnim:IsPlaying() then pip.chargeAnim:Play() end
+            pip.chargeProgress:Show()
+            local innerW = math.max(1, pip:GetWidth() - 2)
+            pip.chargeProgress:SetWidth(math.max(1, innerW * fraction))
 
         else
+            -- Empty pip not yet charging
             pip.fill:Hide()
             pip.sheen:Hide()
             pip.chargeFill:Hide()
-            if pip.chargeAnim:IsPlaying() then pip.chargeAnim:Stop() end
+            pip.chargeProgress:Hide()
         end
     end
 end
@@ -356,11 +369,6 @@ local function DestroyModernBar()
         modernEventFrm = nil
     end
     if modernBar then
-        for _, pip in ipairs(modernBar.pips or {}) do
-            if pip.chargeAnim and pip.chargeAnim:IsPlaying() then
-                pip.chargeAnim:Stop()
-            end
-        end
         modernBar:Hide()
         modernBar = nil
     end
@@ -398,8 +406,12 @@ EnableModernLook = function()
     if not modernEventFrm then
         modernEventFrm = CreateFrame("Frame")
         modernEventFrm:EnableMouse(false)
-        modernEventFrm:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
-        modernEventFrm:RegisterUnitEvent("UNIT_MAXPOWER",     "player")
+        -- UNIT_POWER_UPDATE  → integer pip changes
+        -- UNIT_POWER_FREQUENT → sub-pip changes (~0.5 s cadence), drives chargeProgress
+        -- UNIT_MAXPOWER      → rebuild if pip count changes (e.g. talent swap)
+        modernEventFrm:RegisterUnitEvent("UNIT_POWER_UPDATE",   "player")
+        modernEventFrm:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
+        modernEventFrm:RegisterUnitEvent("UNIT_MAXPOWER",       "player")
         modernEventFrm:SetScript("OnEvent", function(_, event, _, powerType)
             if event == "UNIT_MAXPOWER" then
                 local newMax = UnitPowerMax("player", ESSENCE_POWER) or 6
@@ -412,6 +424,7 @@ EnableModernLook = function()
                     UpdateModernBar()
                 end
             elseif powerType == "ESSENCE" then
+                -- Catches both UNIT_POWER_UPDATE and UNIT_POWER_FREQUENT
                 UpdateModernBar()
             end
         end)
