@@ -103,3 +103,4 @@ major/breaking (*+1.0.0):
     - just build (git tag --sort=-v:refname | head -n1 | awk -F'[v.]' '{printf "%d.%d.%d\n",$2+1,$3,$4}') "[new] [feature] [bugfix] [UI] [Module/$NAME]"
 
 ```
+
