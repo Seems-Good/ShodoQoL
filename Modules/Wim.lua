@@ -33,6 +33,9 @@ WiM.exInput       = nil
 -- count prefix for motions (e.g. 5G = go to line 5)
 WiM.pendingCount  = ""      -- digit string accumulated before a motion
 
+-- currently open VFS file (nil = scratch buffer / SavedVariables)
+WiM._currentFile  = nil     -- absolute VFS path of the file being edited
+
 -- undo
 WiM.undoStack     = {}      -- array of {text=string, cur=int}
 
@@ -217,11 +220,25 @@ local function UpdateCursorLine()
     local lines = GetLines(text)
     local idx   = CurrentLineIndex(lines, cur0)
     local sv    = WiM.scroll and WiM.scroll:GetVerticalScroll() or 0
-    local lineTopY = 32 + 2 + (idx - 1) * LINE_H - sv
+
+    -- Derive the true per-line pitch from the EditBox's actual rendered height.
+    -- This eliminates the compounding drift that occurs with a hardcoded LINE_H.
+    local numLines  = math.max(1, WiM.editor:GetNumLines())
+    local ebH       = WiM.editor:GetHeight()
+    local realLineH = ebH / numLines
+
+    -- The scroll frame's top edge sits 32px below the frame top (28px title +
+    -- 4px border).  The EditBox has a 2px top text inset (EDITOR_TOP_INSET),
+    -- so the first line of rendered text starts at offset 34.
+    local SCROLL_TOP   = 32
+    local TEXT_INSET_T = 2
+
+    local lineTopY = SCROLL_TOP + TEXT_INSET_T + (idx - 1) * realLineH - sv
     local fH       = WiM.frame and WiM.frame:GetHeight() or 500
-    if lineTopY + LINE_H < 32 or lineTopY > fH - 28 then
+    if lineTopY + realLineH < SCROLL_TOP or lineTopY > fH - 28 then
         WiM.cursorLine:Hide(); return
     end
+    WiM.cursorLine:SetHeight(realLineH)
     WiM.cursorLine:ClearAllPoints()
     WiM.cursorLine:SetPoint("TOPLEFT",  WiM.frame, "TOPLEFT",   6, -lineTopY)
     WiM.cursorLine:SetPoint("TOPRIGHT", WiM.frame, "TOPRIGHT", -6, -lineTopY)
@@ -234,13 +251,19 @@ local function ScrollToCursor()
     local cur0  = GetCursorPos()
     local lines = GetLines(text)
     local idx   = CurrentLineIndex(lines, cur0)
-    local lineTop    = (idx - 1) * LINE_H
-    local lineBottom = lineTop + LINE_H
+
+    -- Same real-line-height derivation so scroll targets match cursor bar exactly.
+    local numLines  = math.max(1, WiM.editor:GetNumLines())
+    local ebH       = WiM.editor:GetHeight()
+    local realLineH = ebH / numLines
+
+    local lineTop    = (idx - 1) * realLineH
+    local lineBottom = lineTop + realLineH
     local viewH      = WiM.scroll:GetHeight()
     local sv         = WiM.scroll:GetVerticalScroll()
     local svMax      = WiM.scroll:GetVerticalScrollRange()
     if lineTop >= sv and lineBottom <= sv + viewH then return end
-    local target = lineTop - (viewH - LINE_H) / 2
+    local target = lineTop - (viewH - realLineH) / 2
     WiM.scroll:SetVerticalScroll(math.max(0, math.min(svMax, target)))
 end
 
@@ -266,7 +289,7 @@ local function SetModeBadge(mode)
     WiM.modeBadge:SetTextColor(rgb(c))
     -- cursorLine colour only applies to editing modes
     if WiM.cursorLine and mode ~= "TERM" then
-        WiM.cursorLine:SetColorTexture(c.r, c.g, c.b, 0.70)
+        WiM.cursorLine:SetColorTexture(c.r, c.g, c.b, 0.30)
     end
 end
 
@@ -687,6 +710,7 @@ local function TerminalSubmit(line)
             UndoPush()
             WiM.editor:SetText(content)
             SetCursorPos(0)
+            WiM._currentFile = fname   -- fname is already absolute from CLI.ReadFile
             ShowStatus(string.format('"%s"  opened from VFS', fname), 2)
             log:Invoke(":edit", fname)
         end,
@@ -909,6 +933,7 @@ RefreshExplorer = function(targetPath)
                     UndoPush()
                     WiM.editor:SetText(content)
                     SetCursorPos(0)
+                    WiM._currentFile = ePath   -- absolute path from VFS listing
                     ShowStatus(string.format('"%s"  %dL', eName, select(1, TextStats(content))), 2)
                     log:Invoke(":Ex open", ePath)
                 end
@@ -1141,14 +1166,33 @@ local function ExExecute()
         end
 
     elseif cmdWord == "w" and not cmdArgs then
-        -- plain :w → save to SavedVariables
+        -- plain :w → save to the currently open VFS file if there is one,
+        -- otherwise fall back to SavedVariables (scratch buffer).
         WiM._preHelpText = nil
-        SaveText()
-        EnterNormal()
-        ShowStatus("Written to SavedVariables", 1.5)
+        if WiM._currentFile then
+            local CLI = ShodoQoL.CLI
+            if not CLI then
+                EnterNormal()
+                ShowStatus("WSh: Libs/cli.lua not loaded", 3); return
+            end
+            local content = GetText()
+            local path, err = CLI.WriteFile(WiM._currentFile, content)
+            EnterNormal()
+            if err then
+                ShowStatus("E: " .. err, 3)
+                log:Warn(":w - " .. err)
+            else
+                ShowStatus(string.format('"%s"  %dB written', path, #content), 2)
+                log:Invoke(":w", path)
+            end
+        else
+            SaveText()
+            EnterNormal()
+            ShowStatus("Written to SavedVariables", 1.5)
+        end
 
     elseif cmdWord == "w" and cmdArgs then
-        -- :w <file> → write to VFS
+        -- :w <file> → write to VFS path and track it as the current file
         local CLI = ShodoQoL.CLI
         if not CLI then
             EnterNormal()
@@ -1161,13 +1205,22 @@ local function ExExecute()
             ShowStatus("E: " .. err, 3)
             log:Warn(":w - " .. err)
         else
+            WiM._currentFile = path   -- track for future plain :w saves
             ShowStatus(string.format('"%s"  %dB written', path, #content), 2)
             log:Invoke(":w", path)
         end
 
     elseif cmdWord == "wq" or cmdWord == "x" then
         WiM._preHelpText = nil
-        SaveText()
+        if WiM._currentFile then
+            local CLI = ShodoQoL.CLI
+            if CLI then
+                local content = GetText()
+                CLI.WriteFile(WiM._currentFile, content)
+            end
+        else
+            SaveText()
+        end
         log:Event("closed via :" .. cmdWord .. " (saved)")
         WiM.frame:Hide()
 
@@ -1207,6 +1260,12 @@ local function ExExecute()
             UndoPush()
             WiM.editor:SetText(content)
             SetCursorPos(0)
+            -- Resolve to absolute path so plain :w always writes back correctly
+            if cmdArgs:sub(1,1) == "/" then
+                WiM._currentFile = cmdArgs
+            else
+                WiM._currentFile = CLI.GetCWD():gsub("/$","") .. "/" .. cmdArgs
+            end
             EnterNormal()
             local lc = select(1, TextStats(content))
             ShowStatus(string.format('"%s"  %dL', cmdArgs, lc), 2)
@@ -1732,7 +1791,7 @@ local function BuildFrame()
 
     -- ── Cursor-line highlight ──────────────────────────────────────────
     local cursorLine = f:CreateTexture(nil, "BACKGROUND")
-    cursorLine:SetHeight(LINE_H + 2)
+    cursorLine:SetHeight(LINE_H)   -- initial value; overwritten dynamically by UpdateCursorLine
     cursorLine:Hide()
     WiM.cursorLine = cursorLine
 
@@ -2075,7 +2134,10 @@ local function BuildFrame()
                 end
                 line = line + 1
             end
-            WiM.posInfo:SetText(string.format("Ln %d  Col %d  |%d|", line, col, len))
+            local fname = WiM._currentFile
+                and ("|cff52c4af" .. (WiM._currentFile:match("[^/]+$") or WiM._currentFile) .. "|r  ")
+                or ""
+            WiM.posInfo:SetText(fname .. string.format("Ln %d  Col %d  |%d|", line, col, len))
         end
     end
 
@@ -2147,12 +2209,19 @@ local function BuildFrame()
             f:ClearAllPoints()
             f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", db.x, db.y)
         end
-        local lines, chars = TextStats(db.text or "")
-        log:Event(string.format("opened - %d lines, %d chars in buffer", lines, chars))
+        -- If no file is tracked we're editing the scratch buffer
+        if not WiM._currentFile then
+            local lines, chars = TextStats(db.text or "")
+            log:Event(string.format("opened - %d lines, %d chars in buffer", lines, chars))
+        else
+            log:Event(string.format("opened - editing %s", WiM._currentFile))
+        end
         print("|cff33937f[ShodoQoL]|r |cff52c4afWiM|r"
             .. " Press |cff52c4af[Esc]|r |cff888888for NORMAL mode"
             .. "  -  then|r |cff52c4af[:q] [Enter]|r |cff888888to exit"
-            .. "  -  |r|cff52c4af[:help]|r |cff888888for all commands|r")
+            .. "  -  |r|cff52c4af[:help]|r |cff888888for all commands|r"
+            .. (WiM._currentFile
+                and ("  |r|cff52c4af" .. WiM._currentFile .. "|r") or ""))
     end)
 
     f:HookScript("OnHide", function()
