@@ -53,6 +53,16 @@ WiM._exActions  = {}      -- parallel action-function table for hjkl activation
 WiM._exSelected = 1       -- 1-based currently-highlighted row
 WiM._exRowCount = 0       -- total rows visible after last refresh
 
+-- REPL
+WiM._replOutput  = nil     -- accumulated REPL output string
+WiM._preReplText = nil     -- editor buffer saved before entering REPL
+WiM._preReplCur  = nil     -- cursor saved before entering REPL
+WiM._replPending = false   -- true when REPL is waiting for more input (...)
+
+-- Syntax highlight
+WiM._hlEnabled   = false   -- whether highlight overlay is currently on
+WiM._hlSource    = nil     -- last highlighted source text (cache key)
+
 local FONT_SIZE = 18        -- was 16
 local LINE_H    = 20        -- bumped to match larger font
 local UNDO_MAX  = 20        -- maximum undo snapshots kept in the ring
@@ -109,6 +119,7 @@ local COL = {
     EX       = { r=0.65, g=0.90, b=0.82 },  -- pale mint-teal
     SEARCH   = { r=0.95, g=0.72, b=0.22 },  -- warm amber for search prompt
     TERM     = { r=0.45, g=0.95, b=0.65 },  -- bright green for terminal
+    REPL     = { r=0.69, g=0.60, b=0.94 },  -- soft lavender for REPL
     EXPLORER = { r=0.55, g=0.85, b=1.00 },  -- sky blue for explorer
     BG       = { r=0.04, g=0.06, b=0.05 },  -- near-black with green tint
     BORDER   = { r=0.20, g=0.58, b=0.50 },  -- ShodoQoL brand green
@@ -461,6 +472,176 @@ local function ExitTerminal()
     EnterNormal()
 end
 
+------------------------------------------------------------------------
+-- REPL mode  (:lua / :repl)
+-- Uses loadstring + pcall to execute Lua in the live WoW environment.
+-- The REPL panel reuses the same terminal-bar infrastructure.
+------------------------------------------------------------------------
+
+local function ExitRepl()
+    if WiM.mode ~= "REPL" then return end
+    if WiM.replBar   then WiM.replBar:Hide()          end
+    if WiM.replInput then WiM.replInput:ClearFocus()  end
+    if WiM.statusMsg then WiM.statusMsg:Show()         end
+    if WiM.posInfo   then WiM.posInfo:Show()           end
+    if WiM.lineNums  then WiM.lineNums:Show()          end
+    WiM.editor:SetText(WiM._preReplText or "")
+    SetCursorPos(math.min(WiM._preReplCur or 0, #(WiM._preReplText or "")))
+    WiM._preReplText = nil
+    WiM._preReplCur  = nil
+    WiM._replOutput  = nil
+    WiM._replPending = false
+    log:Event("REPL closed")
+    EnterNormal()
+end
+
+local function ReplFlush()
+    WiM.editor:SetText(WiM._replOutput or "")
+    local len = #(WiM._replOutput or "")
+    SetCursorPos(len)
+    WiM.scroll:SetVerticalScroll(WiM.scroll:GetVerticalScrollRange())
+end
+
+local function ReplPrompt()
+    return WiM._replPending and "... " or "lua> "
+end
+
+local function ReplSubmit(line)
+    local R = ShodoQoL.REPL
+    if not R then ExitRepl(); return end
+
+    line = line and line:match("^%s*(.-)%s*$") or ""
+
+    -- Special commands inside REPL
+    if line == "exit" or line == "quit" then
+        ExitRepl(); return
+    end
+    if line == "clear" then
+        WiM._replOutput  = ReplPrompt()
+        WiM._replPending = false
+        ReplFlush(); return
+    end
+    if line == "reset" then
+        R.Reset()
+        WiM._replPending = false
+        WiM._replOutput  = (WiM._replOutput or "")
+                         .. ReplPrompt() .. line .. "\n"
+                         .. "|cff52c4af-- environment reset --|r\n"
+                         .. ReplPrompt()
+        ReplFlush(); return
+    end
+
+    -- Push to history (skip blank / continuation lines)
+    if line ~= "" and not WiM._replPending then
+        R.HistoryPush(line)
+    end
+
+    -- Echo the input line
+    WiM._replOutput = (WiM._replOutput or "")
+                    .. ReplPrompt() .. line .. "\n"
+
+    -- Execute
+    local result = R.Exec(line)
+
+    if result == "..." then
+        -- Incomplete chunk — wait for more input
+        WiM._replPending = true
+    else
+        WiM._replPending = false
+        if result then
+            WiM._replOutput = WiM._replOutput .. result .. "\n"
+        end
+    end
+
+    WiM._replOutput = WiM._replOutput .. ReplPrompt()
+    ReplFlush()
+end
+
+local function EnterRepl()
+    local R = ShodoQoL.REPL
+    if not R then
+        ShowStatus("REPL: Libs/repl.lua not loaded", 3)
+        log:Warn(":repl - repl.lua unavailable")
+        return
+    end
+
+    WiM._preReplText = GetText()
+    WiM._preReplCur  = GetCursorPos()
+    WiM._replPending = false
+
+    WiM._replOutput =
+        "|cffb09af0WiM REPL|r  – live WoW Lua  "
+        .. "|cff888888(exit/reset/clear, Up/Down=history)|r\n"
+        .. "lua> "
+
+    WiM.mode = "REPL"
+    SetModeBadge("REPL")
+
+    WiM.editor:SetText(WiM._replOutput)
+    SetCursorPos(#WiM._replOutput)
+    WiM.scroll:SetVerticalScroll(WiM.scroll:GetVerticalScrollRange())
+
+    if WiM.lineNums   then WiM.lineNums:Hide()   end
+    if WiM.cursorLine then WiM.cursorLine:Hide()  end
+    if WiM.statusMsg  then WiM.statusMsg:Hide()   end
+    if WiM.posInfo    then WiM.posInfo:Hide()     end
+    if WiM.replBar    then WiM.replBar:Show()     end
+    if WiM.replInput  then
+        WiM.replInput:SetText("")
+        C_Timer.After(0, function()
+            if WiM.mode == "REPL" then WiM.replInput:SetFocus() end
+        end)
+    end
+
+    WiM.keyFrame:EnableKeyboard(false)
+    WiM.keyFrame:SetPropagateKeyboardInput(false)
+
+    log:Event("REPL opened")
+end
+
+------------------------------------------------------------------------
+-- Syntax highlight toggle
+------------------------------------------------------------------------
+local function HL_Apply()
+    local HL = ShodoQoL.Highlight
+    if not HL then
+        ShowStatus("Highlight: Libs/highlight.lua not loaded", 3); return
+    end
+    local src = GetText()
+    -- Strip any existing colour escapes so we don't double-highlight
+    local plain = HL.Strip(src)
+    if plain == WiM._hlSource then return end   -- nothing changed
+    WiM._hlSource = plain
+    local coloured = HL.Colorize(plain)
+    -- Preserve cursor position across the SetText call
+    local cur0 = GetCursorPos()
+    WiM.editor:SetText(coloured)
+    SetCursorPos(math.min(cur0, #coloured))
+    log:Info("highlight applied – " .. #plain .. " chars")
+end
+
+local function HL_Strip()
+    local HL = ShodoQoL.Highlight
+    if not HL then return end
+    local plain = HL.Strip(GetText())
+    local cur0  = GetCursorPos()
+    WiM.editor:SetText(plain)
+    SetCursorPos(math.min(cur0, #plain))
+    WiM._hlSource = nil
+    log:Info("highlight stripped")
+end
+
+local function ToggleHighlight()
+    WiM._hlEnabled = not WiM._hlEnabled
+    if WiM._hlEnabled then
+        HL_Apply()
+        ShowStatus("|cff52c4afHighlight ON|r  (:hl to toggle)", 2)
+    else
+        HL_Strip()
+        ShowStatus("Highlight OFF  (:hl to toggle)", 2)
+    end
+end
+
 local function TerminalPrompt()
     local CLI = ShodoQoL.CLI
     if not CLI then return "$ " end
@@ -498,6 +679,9 @@ local function TerminalSubmit(line)
     local wimRef = {
         ExitTerminal  = ExitTerminal,
         GetEditorText = function() return WiM._preTermText or "" end,
+        OpenRepl      = function()
+            C_Timer.After(0, function() EnterRepl() end)
+        end,
         OpenFileInEditor = function(fname, content)
             ExitTerminal()
             UndoPush()
@@ -849,6 +1033,32 @@ FILESYSTEM / SHELL
   Type 'exit' (or press Esc) to close the terminal and return to the
   last editor buffer.
 
+REPL  (live Lua execution with real WoW game data)
+  :lua  /  :repl   open the Lua REPL panel
+  Inside the REPL:
+    Type any Lua expression or statement and press Enter to run it.
+    Return values are printed automatically.
+    Up / Down arrows cycle through input history.
+    Multi-line input: if a chunk is incomplete (function…end, etc.)
+      the prompt shows "..." and waits for the closing statement.
+    reset          clear all REPL variables (fresh environment)
+    clear          wipe the output display
+    exit / Esc     close REPL and return to the last editor buffer
+  Examples:
+    lua> UnitName("player")          → "Shodo"
+    lua> UnitHealth("target")        → 485000
+    lua> GetItemInfo(12345)          → item details
+    lua> for k,v in pairs(_G) do ... end
+    lua> x = 42   (variables persist across lines in the session)
+    lua> x * 2    → 84
+
+SYNTAX HIGHLIGHT
+  :hl  /  :highlight   toggle Lua syntax colouring on the editor buffer
+  Colours: keywords=teal, strings=amber, numbers=gold, comments=grey,
+           WoW API (CamelCase)=lavender, operators=bright-teal
+  Highlight re-applies automatically on every edit while enabled.
+  Turn it off with :hl again to return to plain text.
+
 OTHER
   Ctrl+S         save without closing
 
@@ -972,6 +1182,14 @@ local function ExExecute()
     elseif cmdWord == "term" or cmdWord == "terminal" then
         EnterNormal()
         EnterTerminal()
+
+    elseif cmdWord == "lua" or cmdWord == "repl" then
+        EnterNormal()
+        EnterRepl()
+
+    elseif cmdWord == "hl" or cmdWord == "highlight" then
+        EnterNormal()
+        ToggleHighlight()
 
     elseif cmdWord == "e" and cmdArgs then
         -- :e <file>  open VFS file in editor
@@ -1116,6 +1334,9 @@ end
 local function HandleNormalKey(key, ctrl, shift)
     -- TERM mode keys are eaten by the termInput EditBox, not here.
     if WiM.mode == "TERM" then return end
+
+    -- REPL mode keys are eaten by the replInput EditBox, not here.
+    if WiM.mode == "REPL" then return end
 
     local text = GetText()
     local cur0 = GetCursorPos()
@@ -1705,7 +1926,70 @@ local function BuildFrame()
     WiM.termBar   = termBar
     WiM.termInput = termInput
 
-    -- ── Explorer panel (:Ex) ───────────────────────────────────────────
+    -- ── REPL input bar (visible only in REPL mode) ─────────────────────
+    -- Identical layout to termBar but lavender-tinted.
+    local replBar = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    replBar:SetHeight(22)
+    replBar:SetPoint("BOTTOMLEFT",  f, "BOTTOMLEFT",   6, 4)
+    replBar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -28, 4)
+    replBar:SetBackdrop({
+        bgFile  = "Interface\\ChatFrame\\ChatFrameBackground",
+        tile=true, tileSize=8,
+        insets={ left=2, right=2, top=2, bottom=2 },
+    })
+    replBar:SetBackdropColor(0.08, 0.06, 0.14, 0.95)
+    replBar:Hide()
+
+    local replPromptLabel = replBar:CreateFontString(nil, "OVERLAY")
+    replPromptLabel:SetPoint("LEFT", replBar, "LEFT", 4, 0)
+    replPromptLabel:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+    replPromptLabel:SetText("|cffb09af0lua>|r")
+    WiM.replPromptLabel = replPromptLabel
+
+    local replInput = CreateFrame("EditBox", "WimReplInput", replBar)
+    replInput:SetPoint("LEFT",  replPromptLabel, "RIGHT", 4, 0)
+    replInput:SetPoint("RIGHT", replBar, "RIGHT", -4, 0)
+    replInput:SetHeight(18)
+    replInput:SetFont("Fonts\\FRIZQT__.TTF", 11, "MONOCHROME")
+    replInput:SetTextColor(rgb(COL.TEXT))
+    replInput:SetAutoFocus(false)
+    replInput:SetMaxLetters(2000)
+    replInput:SetMultiLine(false)
+
+    replInput:SetScript("OnEnterPressed", function(self)
+        local line = self:GetText()
+        self:SetText("")
+        ReplSubmit(line)
+        -- Update prompt label to reflect pending state
+        if WiM.replPromptLabel then
+            WiM.replPromptLabel:SetText(
+                WiM._replPending and "|cffb09af0...|r" or "|cffb09af0lua>|r")
+        end
+    end)
+    replInput:SetScript("OnEscapePressed", function()
+        ExitRepl()
+    end)
+    -- History navigation: Up/Down arrows cycle through REPL history
+    replInput:SetScript("OnKeyDown", function(self, key)
+        local R = ShodoQoL.REPL
+        if key == "UP" and R then
+            local prev = R.HistoryPrev()
+            if prev then self:SetText(prev)
+                self:SetCursorPosition(#prev) end
+        elseif key == "DOWN" and R then
+            local nxt = R.HistoryNext()
+            if nxt then self:SetText(nxt)
+                self:SetCursorPosition(#nxt) end
+        end
+        -- No SetPropagateKeyboardInput calls (protected on EditBox)
+    end)
+    replInput:SetScript("OnEditFocusGained", function()
+        WiM.keyFrame:EnableKeyboard(false)
+        WiM.keyFrame:SetPropagateKeyboardInput(false)
+    end)
+
+    WiM.replBar   = replBar
+    WiM.replInput = replInput
     local exPanel = CreateFrame("Frame", "WimExPanel", f, "BackdropTemplate")
     exPanel:SetPoint("TOPLEFT",     f, "TOPLEFT",     50, -32)
     exPanel:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -28, 28)
@@ -1796,16 +2080,26 @@ local function BuildFrame()
     end
 
     eb:SetScript("OnTextChanged", function(self, userInput)
-        if WiM.mode == "TERM" then return end   -- don't update chrome in terminal
+        if WiM.mode == "TERM" or WiM.mode == "REPL" then return end
         Refresh()
         if WiM.mode == "NORMAL" then UpdateCursor() end
         if userInput and WiM.searchQuery ~= "" then
             WiM.searchMatches = {}
             WiM.searchIdx     = 0
         end
+        -- Re-apply highlight on user edits (debounced via _hlSource cache)
+        if userInput and WiM._hlEnabled then
+            C_Timer.After(0.4, function()
+                if WiM._hlEnabled
+                and WiM.mode ~= "TERM"
+                and WiM.mode ~= "REPL" then
+                    HL_Apply()
+                end
+            end)
+        end
     end)
     eb:SetScript("OnCursorChanged", function()
-        if WiM.mode == "TERM" then return end
+        if WiM.mode == "TERM" or WiM.mode == "REPL" then return end
         Refresh()
         if WiM.mode == "NORMAL" then UpdateCursor() end
     end)
@@ -1827,7 +2121,7 @@ local function BuildFrame()
         _curTick = 0
 
         local mode = WiM.mode
-        if mode == "TERM" then return end   -- no cursor work in terminal
+        if mode == "TERM" or mode == "REPL" then return end   -- no cursor work in terminal/REPL
 
         local cur0  = GetCursorPos()
         local moved = (cur0 ~= _lastCur0) or (mode ~= _lastMode)
@@ -1873,6 +2167,18 @@ local function BuildFrame()
             WiM._termOutput  = nil
             if WiM.termBar   then WiM.termBar:Hide()         end
             if WiM.termInput then WiM.termInput:ClearFocus() end
+            if WiM.statusMsg then WiM.statusMsg:Show()        end
+            if WiM.posInfo   then WiM.posInfo:Show()          end
+            if WiM.lineNums  then WiM.lineNums:Show()         end
+            WiM.mode = "NORMAL"
+        elseif WiM.mode == "REPL" then
+            db.text = WiM._preReplText or ""
+            WiM._preReplText = nil
+            WiM._preReplCur  = nil
+            WiM._replOutput  = nil
+            WiM._replPending = false
+            if WiM.replBar   then WiM.replBar:Hide()         end
+            if WiM.replInput then WiM.replInput:ClearFocus() end
             if WiM.statusMsg then WiM.statusMsg:Show()        end
             if WiM.posInfo   then WiM.posInfo:Show()          end
             if WiM.lineNums  then WiM.lineNums:Show()         end

@@ -479,6 +479,7 @@ FILES
 EDITOR INTEGRATION
   edit  <file>      open file in WiM, exit terminal
   write <file>      save current buffer to VFS file
+  repl              open the Lua REPL (exits terminal first)
   clear             clear terminal output
 
 EXPLORER
@@ -543,6 +544,13 @@ function CLI.RunCommand(line, wimRef)
         if wimRef and wimRef.OpenFileInEditor then
             wimRef.OpenFileInEditor(args[1], content)
         end
+        return nil
+
+    elseif cmd == "repl" then
+        -- Exit the terminal and open the REPL
+        if wimRef and wimRef.ExitTerminal then wimRef.ExitTerminal() end
+        -- OpenRepl is called by WiM after ExitTerminal settles
+        if wimRef and wimRef.OpenRepl then wimRef.OpenRepl() end
         return nil
 
     elseif cmd == "write" then
